@@ -1,0 +1,17 @@
+# Dependencies
+**/node_modules/
+
+# Environment Variables
+**/.env
+**/.env.local
+**/.env.development
+**/.env.production
+
+# Logs
+**/logs
+**/*.log
+**/npm-debug.log*
+
+# OS Files
+**/.DS_Store
+**/.vscode/
