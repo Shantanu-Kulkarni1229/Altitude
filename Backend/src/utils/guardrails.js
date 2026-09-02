@@ -24,18 +24,19 @@ const checkFitness = (customerFitness, requiredFitness) => {
 
 // 3. Add-on Cap
 const checkAddonCap = (basePrice, addonsTotal) => {
-  const maxAddonSpend = basePrice * 0.25; // Let's say 25% max
+  const capPercentage = process.env.ADDON_CAP_PERCENTAGE ? Number(process.env.ADDON_CAP_PERCENTAGE) : 0.25;
+  const maxAddonSpend = basePrice * capPercentage; 
   if (addonsTotal > maxAddonSpend) {
     return {
       passed: false,
-      reason: `Add-on spending (₹${addonsTotal}) exceeds cap of 25% of base price (₹${maxAddonSpend}).`
+      reason: `Add-on spending (₹${addonsTotal}) exceeds cap of ${capPercentage*100}% of base price (₹${maxAddonSpend}).`
     };
   }
   return { passed: true, reason: 'Add-on spend within limits' };
 };
 
 // Log Guardrail Action
-const logGuardrailDecision = async (actor, action, decision, reason, amount, outcome, bookingId = null) => {
+const logGuardrailDecision = async (actor, action, decision, reason, amount, outcome, bookingId = null, correlationId = null, trace = []) => {
   try {
     const log = new AuditLog({
       actor,
@@ -44,7 +45,9 @@ const logGuardrailDecision = async (actor, action, decision, reason, amount, out
       reason,
       amount,
       outcome,
-      bookingId
+      bookingId,
+      correlationId,
+      trace
     });
     await log.save();
   } catch (error) {

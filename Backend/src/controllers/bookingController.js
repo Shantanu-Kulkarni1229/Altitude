@@ -1,25 +1,27 @@
 const bookingService = require('../services/bookingService');
 const Booking = require('../models/Booking');
+const { v4: uuidv4 } = require('uuid');
 
 exports.createBooking = async (req, res) => {
+  const correlationId = req.headers['x-correlation-id'] || uuidv4();
   try {
-    const result = await bookingService.processBookingAttempt(req.body);
+    const result = await bookingService.processBookingAttempt(req.body, correlationId);
     res.status(201).json({
       success: true,
-      message: 'Booking created and pending payment',
+      message: 'Booking process complete',
       bookingId: result.booking.bookingId,
       razorpayOrderId: result.order.id,
       totalAmount: result.totalAmount
     });
   } catch (error) {
-    // If it's a known error from the service (e.g., guardrail fail)
     res.status(400).json({ success: false, error: error.message });
   }
 };
 
 exports.confirmBooking = async (req, res) => {
+  const correlationId = req.headers['x-correlation-id'] || uuidv4();
   try {
-    const booking = await bookingService.confirmBooking(req.body);
+    const booking = await bookingService.confirmBooking(req.body, correlationId);
     res.status(200).json({
       success: true,
       message: 'Booking confirmed successfully',
@@ -27,6 +29,27 @@ exports.confirmBooking = async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
+  }
+};
+
+exports.cancelBooking = async (req, res) => {
+  const correlationId = req.headers['x-correlation-id'] || uuidv4();
+  const { reason } = req.body;
+  const booking = await bookingService.cancelBooking(req.params.bookingId, reason, correlationId);
+  res.status(200).json({ success: true, message: 'Booking cancelled successfully', data: booking });
+};
+
+exports.razorpayWebhook = async (req, res) => {
+  const correlationId = req.headers['x-correlation-id'] || uuidv4();
+  const signature = req.headers['x-razorpay-signature'];
+  // Assuming body parser middleware parsing JSON before this route, but raw needed for crypto in real apps.
+  // We'll use req.body as parsed JSON.
+  
+  try {
+    await bookingService.confirmViaWebhook(req.body, signature, correlationId);
+    res.status(200).send('OK');
+  } catch (e) {
+    res.status(400).send('Webhook Error');
   }
 };
 

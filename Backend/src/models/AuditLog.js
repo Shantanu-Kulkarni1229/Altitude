@@ -18,8 +18,14 @@ const auditLogSchema = new mongoose.Schema({
   outcome: { 
     type: String, 
     required: true,
-    enum: ['success', 'failure', 'fallback'] 
-  }
+    enum: ['success', 'failure', 'fallback', 'duplicate_rejected', 'rate_limit_exceeded'] 
+  },
+  correlationId: { type: String },
+  trace: [{ 
+    check: String, 
+    passed: Boolean, 
+    reason: String 
+  }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('AuditLog', auditLogSchema);

@@ -6,19 +6,22 @@ class OllamaUnavailableError extends Error {
 }
 
 class OllamaService {
-  async generateResponse(prompt, timeoutMs = 8000) {
+  async generateResponse(prompt, timeoutMs = 15000) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      // Using native fetch (Node 18+)
-      const response = await fetch('http://127.0.0.1:11434/api/generate', {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+        },
         body: JSON.stringify({
-          model: 'llama3.1', // or whatever model is used
-          prompt: prompt,
-          stream: false
+          model: 'openai/gpt-oss-20b',
+          messages: [{ role: 'user', content: prompt }],
+          stream: false,
+          temperature: 0.2
         }),
         signal: controller.signal
       });
@@ -26,17 +29,17 @@ class OllamaService {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        throw new Error(`Ollama HTTP Error: ${response.statusText}`);
+        throw new Error(`Cloud LLM HTTP Error: ${response.statusText}`);
       }
 
       const data = await response.json();
-      return data.response;
+      return data.choices[0].message.content;
 
     } catch (error) {
       clearTimeout(timeout);
-      // Catch aborts or connection refused
+      // Catch aborts or connection errors
       if (error.name === 'AbortError' || error.code === 'ECONNREFUSED' || error.message.includes('fetch failed')) {
-        throw new OllamaUnavailableError('Local Ollama instance is unreachable or timed out.');
+        throw new OllamaUnavailableError('Cloud LLM is unreachable or timed out.');
       }
       throw error;
     }

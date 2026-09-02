@@ -1,11 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, SlidersHorizontal, Frown } from 'lucide-react';
 import TrekCard from '../components/TrekCard';
-import { treks } from '../data/treks';
+import axios from 'axios';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('All');
+  const [treks, setTreks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchTreks = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/v1/treks');
+        setTreks(response.data.data);
+      } catch (error) {
+        console.error('Error fetching treks:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTreks();
+  }, []);
 
   const filteredTreks = treks.filter(trek => {
     const matchesSearch = trek.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -74,10 +90,12 @@ export default function Home() {
           </div>
         </div>
 
-        {filteredTreks.length > 0 ? (
+        {loading ? (
+          <div className="text-center py-20 text-stone-500">Loading treks...</div>
+        ) : filteredTreks.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredTreks.map(trek => (
-              <TrekCard key={trek.id} trek={trek} />
+              <TrekCard key={trek.trekId} trek={trek} />
             ))}
           </div>
         ) : (

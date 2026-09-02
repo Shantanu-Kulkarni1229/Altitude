@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { MapPin, Clock, Calendar, Check, ChevronLeft, ShieldCheck, MessageCircle, X } from 'lucide-react';
-import { treks } from '../data/treks';
+import axios from 'axios';
 
 const difficultyColors = {
   easy: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -12,13 +12,50 @@ const difficultyColors = {
 
 export default function TrekDetail() {
   const { id } = useParams();
-  const trek = treks.find(t => t.id === id);
+  const navigate = useNavigate();
+  const location = useLocation();
   
-  const [selectedDeparture, setSelectedDeparture] = useState(trek?.departures[0]?.id || null);
+  const [trek, setTrek] = useState(null);
+  const [batches, setBatches] = useState([]);
+  const [addonsData, setAddonsData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [selectedDeparture, setSelectedDeparture] = useState(null);
   const [selectedAddons, setSelectedAddons] = useState([]);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState('summary'); // summary, processing, success
+  const [checkoutStep, setCheckoutStep] = useState('summary'); 
+  const [checkoutError, setCheckoutError] = useState('');
+  const [finalBookingId, setFinalBookingId] = useState('');
 
+  useEffect(() => {
+    const fetchDetails = async () => {
+      try {
+        const response = await axios.get(`http://localhost:5000/api/v1/treks/${id}`);
+        setTrek(response.data.data.trek);
+        setBatches(response.data.data.batches);
+        setAddonsData(response.data.data.addons);
+        if (response.data.data.batches.length > 0) {
+          setSelectedDeparture(response.data.data.batches[0].batchId);
+        }
+      } catch (error) {
+        console.error('Error fetching trek:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDetails();
+  }, [id]);
+
+  useEffect(() => {
+    if (trek && !loading) {
+      const searchParams = new URLSearchParams(location.search);
+      if (searchParams.get('checkout') === 'true') {
+        setIsCheckoutOpen(true);
+      }
+    }
+  }, [trek, loading, location.search]);
+
+  if (loading) return <div className="text-center py-20 text-stone-500">Loading trek details...</div>;
   if (!trek) return <div className="text-center py-20 text-stone-500">Trek not found.</div>;
 
   const toggleAddon = (addonId) => {
@@ -27,29 +64,75 @@ export default function TrekDetail() {
     );
   };
 
-  const selectedDepData = trek.departures.find(d => d.id === selectedDeparture);
+  const selectedDepData = batches.find(b => b.batchId === selectedDeparture);
   const basePrice = selectedDepData ? selectedDepData.price : trek.basePrice;
   const addonsTotal = selectedAddons.reduce((acc, addonId) => {
-    const addon = trek.addons.find(a => a.id === addonId);
+    const addon = addonsData.find(a => a.addOnId === addonId);
     return acc + (addon ? addon.price : 0);
   }, 0);
-  const total = basePrice + addonsTotal;
+  const totalAmount = basePrice + addonsTotal;
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     setCheckoutStep('processing');
-    
-    // Simulate guardrail logic for demo:
-    // If the trek is 'extreme' difficulty, we block it to simulate a fitness guardrail intervention.
-    // If the selected departure has 0 slots, we block it for availability.
-    setTimeout(() => {
-      if (selectedDepData && selectedDepData.slots === 0) {
-        setCheckoutStep('rejected_slots');
-      } else if (trek.difficulty === 'extreme') {
+    try {
+      // 1. Create Booking & Run Guardrails
+      const createRes = await axios.post('http://localhost:5000/api/v1/bookings/create', {
+        batchId: selectedDeparture,
+        customerId: "cust_123", // Mock customer
+        customerFitnessLevel: 3, // Mock average fitness
+        addOnIds: selectedAddons,
+        source: 'human'
+      });
+
+      const { bookingId, razorpayOrderId } = createRes.data;
+
+      // 2. Open Razorpay Window
+      const options = {
+        key: "rzp_test_TTh1A8wfcPcoLQ", // Ensure this matches backend test key
+        amount: totalAmount * 100,
+        currency: "INR",
+        name: "Altitude",
+        description: `Booking for ${trek.name}`,
+        order_id: razorpayOrderId,
+        handler: async function (response) {
+          try {
+            setCheckoutStep('processing');
+            // 3. Confirm payment on backend
+            await axios.post('http://localhost:5000/api/v1/bookings/confirm', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              bookingId
+            });
+            setFinalBookingId(bookingId);
+            setCheckoutStep('success');
+          } catch (err) {
+            setCheckoutError('Payment verification failed.');
+            setCheckoutStep('rejected_other');
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setCheckoutStep('summary'); // User closed window
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+      
+    } catch (error) {
+      // Guardrail rejected
+      const errorMsg = error.response?.data?.error || error.message;
+      setCheckoutError(errorMsg);
+      if (errorMsg.toLowerCase().includes('fitness')) {
         setCheckoutStep('rejected_fitness');
+      } else if (errorMsg.toLowerCase().includes('availability') || errorMsg.toLowerCase().includes('slots')) {
+        setCheckoutStep('rejected_slots');
       } else {
-        setCheckoutStep('success');
+        setCheckoutStep('rejected_other');
       }
-    }, 2500);
+    }
   };
 
   return (
@@ -136,15 +219,16 @@ export default function TrekDetail() {
             <section>
               <h2 className="text-2xl font-bold text-stone-900 mb-6">Available Departures</h2>
               <div className="grid gap-4">
-                {trek.departures.map(dep => {
-                  const isSelected = selectedDeparture === dep.id;
-                  const isLow = dep.slots <= 3;
-                  const isFull = dep.slots === 0;
+                {batches.map(dep => {
+                  const isSelected = selectedDeparture === dep.batchId;
+                  const availableSlots = dep.totalSlots - dep.slotsBooked;
+                  const isLow = availableSlots > 0 && availableSlots <= 3;
+                  const isFull = availableSlots === 0;
                   
                   return (
                     <div 
-                      key={dep.id}
-                      onClick={() => !isFull && setSelectedDeparture(dep.id)}
+                      key={dep.batchId}
+                      onClick={() => !isFull && setSelectedDeparture(dep.batchId)}
                       className={`relative p-5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between
                         ${isFull ? 'opacity-50 cursor-not-allowed border-stone-200 bg-stone-50' : 
                           isSelected ? 'border-stone-900 bg-stone-900/5' : 'border-stone-200 bg-white hover:border-stone-300'}`}
@@ -157,7 +241,7 @@ export default function TrekDetail() {
                         <div>
                           <p className="font-semibold text-stone-900 flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-stone-500" />
-                            {dep.dateRange}
+                            {new Date(dep.startDate).toLocaleDateString()} - {new Date(dep.endDate).toLocaleDateString()}
                           </p>
                           <p className="text-sm mt-1 font-medium">₹{dep.price.toLocaleString()}</p>
                         </div>
@@ -168,7 +252,7 @@ export default function TrekDetail() {
                         ) : (
                           <span className={`text-sm font-semibold px-3 py-1 rounded-full
                             ${isLow ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                            {dep.slots} {dep.slots === 1 ? 'spot' : 'spots'} left
+                            {availableSlots} {availableSlots === 1 ? 'spot' : 'spots'} left
                           </span>
                         )}
                       </div>
@@ -178,16 +262,16 @@ export default function TrekDetail() {
               </div>
             </section>
 
-            {trek.addons && trek.addons.length > 0 && (
+            {addonsData && addonsData.length > 0 && (
               <section>
                 <h2 className="text-2xl font-bold text-stone-900 mb-6">Optional Add-ons</h2>
                 <div className="grid gap-4">
-                  {trek.addons.map(addon => {
-                    const isSelected = selectedAddons.includes(addon.id);
+                  {addonsData.map(addon => {
+                    const isSelected = selectedAddons.includes(addon.addOnId);
                     return (
                       <div 
-                        key={addon.id}
-                        onClick={() => toggleAddon(addon.id)}
+                        key={addon.addOnId}
+                        onClick={() => toggleAddon(addon.addOnId)}
                         className={`p-4 rounded-xl border transition-all cursor-pointer flex justify-between items-center
                           ${isSelected ? 'border-stone-900 bg-stone-900/5' : 'border-stone-200 bg-white hover:border-stone-300'}`}
                       >
@@ -224,7 +308,7 @@ export default function TrekDetail() {
                   <div className="border-t border-stone-100 pt-4 space-y-2">
                     <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Add-ons</p>
                     {selectedAddons.map(addonId => {
-                      const addon = trek.addons.find(a => a.id === addonId);
+                      const addon = addonsData.find(a => a.addOnId === addonId);
                       return (
                         <div key={addonId} className="flex justify-between text-sm">
                           <span>{addon?.name}</span>
@@ -237,7 +321,7 @@ export default function TrekDetail() {
                 
                 <div className="border-t border-stone-200 pt-4 flex justify-between items-end">
                   <span className="font-semibold text-stone-900">Total</span>
-                  <span className="text-2xl font-bold text-stone-900">₹{total.toLocaleString()}</span>
+                  <span className="text-2xl font-bold text-stone-900">₹{totalAmount.toLocaleString()}</span>
                 </div>
               </div>
 
@@ -257,10 +341,6 @@ export default function TrekDetail() {
                   Book with Concierge
                 </button>
               </div>
-              
-              <p className="text-xs text-stone-400 text-center mt-6">
-                You won't be charged yet. This is a test mode transaction for the buildathon.
-              </p>
             </div>
           </div>
 
@@ -284,14 +364,14 @@ export default function TrekDetail() {
                     <img src={trek.coverPhoto} className="w-16 h-16 rounded-lg object-cover" alt="" />
                     <div>
                       <p className="font-bold text-stone-900">{trek.name}</p>
-                      <p className="text-sm text-stone-500">{selectedDepData?.dateRange}</p>
+                      <p className="text-sm text-stone-500">{selectedDepData && `${new Date(selectedDepData.startDate).toLocaleDateString()} - ${new Date(selectedDepData.endDate).toLocaleDateString()}`}</p>
                     </div>
                   </div>
                   
                   <div className="bg-stone-50 rounded-xl p-4 mb-6 border border-stone-200">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-stone-600 text-sm">Total Amount</span>
-                      <span className="font-bold text-lg text-stone-900">₹{total.toLocaleString()}</span>
+                      <span className="font-bold text-lg text-stone-900">₹{totalAmount.toLocaleString()}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 w-fit px-2 py-1 rounded">
                       <ShieldCheck className="w-3 h-3" /> Ready for final safety check
@@ -302,7 +382,7 @@ export default function TrekDetail() {
                     onClick={handleCheckout}
                     className="w-full bg-stone-900 text-white font-semibold py-4 rounded-xl hover:bg-stone-800 transition-colors"
                   >
-                    Pay via Razorpay (Test)
+                    Pay via Razorpay
                   </button>
                 </div>
               </>
@@ -312,7 +392,7 @@ export default function TrekDetail() {
               <div className="p-12 text-center">
                 <div className="w-12 h-12 border-4 border-stone-200 border-t-stone-900 rounded-full animate-spin mx-auto mb-4"></div>
                 <h3 className="text-lg font-semibold text-stone-900">Processing Payment...</h3>
-                <p className="text-stone-500 text-sm mt-2">Running final guardrail checks.</p>
+                <p className="text-stone-500 text-sm mt-2">Waiting for gateway verification.</p>
               </div>
             )}
 
@@ -323,16 +403,12 @@ export default function TrekDetail() {
                 </div>
                 <h3 className="text-xl font-bold text-stone-900">Booking Blocked</h3>
                 <p className="text-stone-600 mt-2 mb-6 text-sm leading-relaxed">
-                  <strong>Safety Guardrail Triggered:</strong> This trek is rated as <span className="font-semibold">Extreme</span> and requires prior high-altitude mountaineering experience. Based on your profile, we cannot safely confirm this booking.
+                  <strong>Safety Guardrail Triggered:</strong> {checkoutError}
                 </p>
                 <div className="bg-stone-50 rounded-xl p-4 mb-6 text-left border border-stone-200">
-                  <p className="text-sm font-semibold text-stone-900 mb-2">Recommended Alternative:</p>
-                  <Link to="/trek/trk_007" onClick={() => setIsCheckoutOpen(false)} className="flex items-center gap-3 group">
-                    <img src={treks.find(t=>t.id==='trk_007').coverPhoto} className="w-10 h-10 rounded object-cover group-hover:opacity-80" alt="" />
-                    <div>
-                      <p className="text-sm font-bold text-stone-900 group-hover:underline">Brahmatal Trek</p>
-                      <p className="text-xs text-stone-500">Moderate • Great for beginners</p>
-                    </div>
+                  <p className="text-sm font-semibold text-stone-900 mb-2">Want to try a moderate trek?</p>
+                  <Link to="/" onClick={() => setIsCheckoutOpen(false)} className="text-stone-900 font-bold hover:underline">
+                    Explore all treks
                   </Link>
                 </div>
                 <button onClick={() => setIsCheckoutOpen(false)} className="w-full bg-stone-100 text-stone-900 font-semibold py-3 px-6 rounded-xl hover:bg-stone-200 transition-colors">
@@ -348,10 +424,25 @@ export default function TrekDetail() {
                 </div>
                 <h3 className="text-xl font-bold text-stone-900">Booking Blocked</h3>
                 <p className="text-stone-600 mt-2 mb-6 text-sm leading-relaxed">
-                  <strong>Availability Guardrail Triggered:</strong> Another adventurer just booked the last remaining slot for this departure date right before your request processed.
+                  <strong>Availability Guardrail Triggered:</strong> {checkoutError}
                 </p>
-                <button onClick={() => setIsCheckoutOpen(false)} className="w-full bg-stone-100 text-stone-900 font-semibold py-3 px-6 rounded-xl hover:bg-stone-200 transition-colors">
+                <button onClick={() => { setIsCheckoutOpen(false); setCheckoutStep('summary'); }} className="w-full bg-stone-100 text-stone-900 font-semibold py-3 px-6 rounded-xl hover:bg-stone-200 transition-colors">
                   Choose Another Date
+                </button>
+              </div>
+            )}
+            
+            {checkoutStep === 'rejected_other' && (
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <X className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold text-stone-900">Booking Blocked</h3>
+                <p className="text-stone-600 mt-2 mb-6 text-sm leading-relaxed">
+                  <strong>Guardrail / Error:</strong> {checkoutError}
+                </p>
+                <button onClick={() => { setIsCheckoutOpen(false); setCheckoutStep('summary'); }} className="w-full bg-stone-100 text-stone-900 font-semibold py-3 px-6 rounded-xl hover:bg-stone-200 transition-colors">
+                  Close
                 </button>
               </div>
             )}
@@ -362,7 +453,7 @@ export default function TrekDetail() {
                   <Check className="w-8 h-8" />
                 </div>
                 <h3 className="text-2xl font-bold text-stone-900">Booking Confirmed</h3>
-                <p className="text-stone-600 mt-2 mb-6">Your adventure awaits! Booking ID: #ALT-{Math.floor(Math.random() * 9000) + 1000}A</p>
+                <p className="text-stone-600 mt-2 mb-6">Your adventure awaits! Booking ID: #{finalBookingId}</p>
                 <Link to="/bookings" onClick={() => setIsCheckoutOpen(false)} className="inline-block bg-stone-100 text-stone-900 font-semibold py-3 px-6 rounded-xl hover:bg-stone-200 transition-colors">
                   View My Bookings
                 </Link>

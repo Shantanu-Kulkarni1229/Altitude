@@ -14,7 +14,7 @@ class ExtractionService {
       const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(rawResponse);
       
       // If essential keys are missing or completely blank, flag low confidence
-      if (!parsed.difficulty && !parsed.budgetCeiling && !parsed.month && !parsed.fitnessLevel) {
+      if (!parsed.difficulty && !parsed.budgetCeiling && !parsed.month && !parsed.fitnessLevel && !parsed.isBookingIntent) {
         return { confidence: 'low', signals: parsed };
       }
       

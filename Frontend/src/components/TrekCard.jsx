@@ -14,7 +14,7 @@ export default function TrekCard({ trek, compact = false }) {
   
   if (compact) {
     return (
-      <Link to={`/trek/${trek.id}`} className="flex gap-4 p-3 rounded-lg border border-stone-200 bg-white hover:border-stone-300 hover:shadow-sm transition-all group">
+      <Link to={`/trek/${trek.trekId}`} className="flex gap-4 p-3 rounded-lg border border-stone-200 bg-white hover:border-stone-300 hover:shadow-sm transition-all group">
         <img src={trek.coverPhoto} alt={trek.name} className="w-20 h-20 object-cover rounded-md group-hover:scale-105 transition-transform duration-300" />
         <div className="flex-1 flex flex-col justify-center">
           <h4 className="font-semibold text-stone-900 text-sm leading-tight mb-1">{trek.name}</h4>
@@ -33,7 +33,7 @@ export default function TrekCard({ trek, compact = false }) {
   }
 
   return (
-    <Link to={`/trek/${trek.id}`} className="group flex flex-col bg-white rounded-xl overflow-hidden border border-stone-200 hover:shadow-md transition-all duration-300">
+    <Link to={`/trek/${trek.trekId}`} className="group flex flex-col bg-white rounded-xl overflow-hidden border border-stone-200 hover:shadow-md transition-all duration-300">
       <div className="relative aspect-[4/3] overflow-hidden bg-stone-100">
         <img src={trek.coverPhoto} alt={trek.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
         <div className="absolute top-4 left-4">
@@ -58,10 +58,12 @@ export default function TrekCard({ trek, compact = false }) {
             <p className="text-xs text-stone-500 mb-0.5">Starting from</p>
             <p className="text-lg font-semibold text-stone-900">₹{trek.basePrice.toLocaleString()}</p>
           </div>
-          <div className={`flex items-center gap-1.5 text-sm font-medium ${urgency ? 'text-rose-600' : 'text-stone-600'}`}>
-            <Users className="w-4 h-4" />
-            {trek.slotsRemaining} {trek.slotsRemaining === 1 ? 'spot' : 'spots'} left
-          </div>
+          {trek.slotsRemaining !== undefined && (
+            <div className={`flex items-center gap-1.5 text-sm font-medium ${urgency ? 'text-rose-600' : 'text-stone-600'}`}>
+              <Users className="w-4 h-4" />
+              {trek.slotsRemaining} {trek.slotsRemaining === 1 ? 'spot' : 'spots'} left
+            </div>
+          )}
         </div>
       </div>
     </Link>

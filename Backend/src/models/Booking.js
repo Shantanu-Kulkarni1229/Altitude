@@ -15,11 +15,13 @@ const bookingSchema = new mongoose.Schema({
   status: { 
     type: String, 
     required: true,
-    enum: ['pending_payment', 'confirmed', 'rejected'] 
+    enum: ['pending_payment', 'confirmed', 'rejected', 'cancelled'] 
   },
   outcomeReason: { type: String },
   razorpayOrderId: { type: String },
-  razorpayPaymentId: { type: String }
+  razorpayPaymentId: { type: String },
+  idempotencyKey: { type: String, unique: true, sparse: true },
+  correlationId: { type: String }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Booking', bookingSchema);

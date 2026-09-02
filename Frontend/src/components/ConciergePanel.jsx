@@ -1,15 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Sparkles, ShieldCheck, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import TrekCard from './TrekCard';
-import { treks } from '../data/treks';
 import chatLogo from '../assets/altitude chatbot Logo.png';
+import axios from 'axios';
 
 export default function ConciergePanel({ isOpen, setIsOpen }) {
   const [messages, setMessages] = useState([
     { id: 1, type: 'concierge', text: 'Hi! I can help you find and book the perfect trek. What kind of adventure are you looking for?' }
   ]);
   const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const navigate = useNavigate();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -19,42 +22,55 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || loading) return;
 
     const userMsg = { id: Date.now(), type: 'user', text: input };
-    setMessages(prev => [...prev, userMsg]);
+    const currentMessages = [...messages, userMsg];
+    setMessages(currentMessages);
+    const currentInput = input;
     setInput('');
+    setLoading(true);
 
-    // Simulate AI response for demo
-    setTimeout(() => {
-      let aiResponse;
-      if (userMsg.text.toLowerCase().includes('moderate') || userMsg.text.toLowerCase().includes('valley')) {
-        aiResponse = {
-          id: Date.now() + 1,
-          type: 'concierge',
-          text: 'I found a great moderate trek for you. The Valley of Flowers is perfect this time of year.',
-          trekRecommendation: treks.find(t => t.id === 'trk_001'),
-          guardrail: 'Within budget · Fitness level matched'
-        };
-      } else if (userMsg.text.toLowerCase().includes('extreme') && userMsg.text.toLowerCase().includes('beginner')) {
-        aiResponse = {
-          id: Date.now() + 1,
-          type: 'concierge',
-          text: 'I cannot recommend Stok Kangri for beginners. It requires high physical fitness and prior high-altitude experience. However, here is a fantastic moderate alternative.',
-          trekRecommendation: treks.find(t => t.id === 'trk_007'),
-          guardrailRejected: 'Safety Check: Fitness mismatch. Blocked.'
-        };
-      } else {
-        aiResponse = {
-          id: Date.now() + 1,
-          type: 'concierge',
-          text: 'I can definitely help you with that. We have some great options in the Himalayas. Can you tell me a bit about your past trekking experience?',
-        };
+    const lastRecommendedMsg = currentMessages.slice().reverse().find(m => m.trekRecommendation);
+    const lastTrekId = lastRecommendedMsg ? lastRecommendedMsg.trekRecommendation.trekId : null;
+
+    try {
+      const response = await axios.post('http://localhost:5000/api/v1/chat/message', {
+        message: currentInput,
+        context: { lastTrekId }
+      });
+
+      const { type, text, data } = response.data;
+
+      if (type === 'booking_redirect') {
+        setIsOpen(false);
+        navigate(`/trek/${data.trekId}?checkout=true`);
+        return;
       }
+      
+      const aiResponse = {
+        id: Date.now() + 1,
+        type: 'concierge',
+        text: text,
+        trekRecommendation: data?.treks && data.treks.length > 0 ? data.treks[0] : null,
+        guardrail: data?.treks?.[0]?.reasoning || null,
+        suggestedAddOn: data?.suggestedAddon || null,
+        isFallback: type === 'fallback'
+      };
+
       setMessages(prev => [...prev, aiResponse]);
-    }, 1500);
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        type: 'concierge',
+        text: 'I am sorry, but I am having trouble connecting to my servers right now.',
+        isFallback: true
+      }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Prevent background scroll when panel is open on mobile
@@ -79,7 +95,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
         />
       )}
       
-      <div className={`fixed inset-y-0 right-0 w-[85%] max-w-[400px] sm:w-[400px] bg-white shadow-2xl border-l border-stone-200 z-50 flex flex-col transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed inset-y-0 right-0 w-[90%] max-w-[450px] sm:w-[450px] bg-white shadow-2xl border-l border-stone-200 z-50 flex flex-col transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="px-6 py-4 border-b border-stone-200 flex justify-between items-center bg-[#faf9f6]">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-stone-900 text-white flex items-center justify-center overflow-hidden p-1">
@@ -87,7 +103,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
             </div>
             <div>
               <h3 className="font-semibold text-stone-900">Concierge</h3>
-              <p className="text-xs text-stone-500">Travel expert</p>
+              <p className="text-xs text-stone-500">AI Travel expert</p>
             </div>
           </div>
           <button onClick={() => setIsOpen(false)} className="text-stone-400 hover:text-stone-700 transition-colors">
@@ -103,30 +119,46 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
                 ? 'bg-stone-900 text-white rounded-tr-sm' 
                 : 'bg-white border border-stone-200 text-stone-800 rounded-tl-sm shadow-sm'
             }`}>
-              <p className="text-[15px] leading-relaxed">{msg.text}</p>
+              <p className="text-[15px] leading-relaxed whitespace-pre-line">{msg.text}</p>
             </div>
             
             {msg.trekRecommendation && (
-              <div className="mt-3 w-[85%] ml-1">
+              <div className="mt-3 w-[90%] ml-1">
                 <TrekCard trek={msg.trekRecommendation} compact={true} />
               </div>
             )}
             
-            {msg.guardrail && (
+            {msg.guardrail && !msg.isFallback && (
               <div className="mt-2 ml-2 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                {msg.guardrail}
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>AI Reason: {msg.guardrail}</span>
               </div>
             )}
 
-            {msg.guardrailRejected && (
-              <div className="mt-2 ml-2 flex items-center gap-1.5 text-xs text-rose-600 font-medium">
+            {msg.suggestedAddOn && (
+              <div className="mt-2 ml-2 flex items-center gap-1.5 text-xs text-blue-600 font-medium">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Suggested Add-on: {msg.suggestedAddOn.name}</span>
+              </div>
+            )}
+
+            {msg.isFallback && msg.id !== 1 && (
+              <div className="mt-2 ml-2 flex items-center gap-1.5 text-xs text-amber-600 font-medium">
                 <AlertCircle className="w-3.5 h-3.5" />
-                {msg.guardrailRejected}
+                Fallback Mode Active
               </div>
             )}
           </div>
         ))}
+        {loading && (
+          <div className="flex flex-col items-start">
+            <div className="bg-white border border-stone-200 text-stone-800 rounded-2xl rounded-tl-sm shadow-sm px-4 py-3 flex gap-1">
+              <span className="w-2 h-2 bg-stone-300 rounded-full animate-bounce"></span>
+              <span className="w-2 h-2 bg-stone-300 rounded-full animate-bounce delay-100"></span>
+              <span className="w-2 h-2 bg-stone-300 rounded-full animate-bounce delay-200"></span>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -137,11 +169,12 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about a trek..."
-            className="w-full bg-stone-100 border-none rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 transition-all placeholder:text-stone-400"
+            disabled={loading}
+            className="w-full bg-stone-100 border-none rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 transition-all placeholder:text-stone-400 disabled:opacity-50"
           />
           <button 
             type="submit" 
-            disabled={!input.trim()}
+            disabled={!input.trim() || loading}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-stone-900 disabled:text-stone-400 hover:bg-stone-200 rounded-lg transition-colors"
           >
             <Send className="w-4 h-4" />

@@ -17,14 +17,13 @@ const batchSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Ensure slotsBooked never exceeds totalSlots
-batchSchema.pre('save', function(next) {
+batchSchema.pre('save', function() {
   if (this.slotsBooked > this.totalSlots) {
-    return next(new Error('Slots booked cannot exceed total slots available.'));
+    throw new Error('Slots booked cannot exceed total slots available.');
   }
   if (this.slotsBooked === this.totalSlots) {
     this.status = 'full';
   }
-  next();
 });
 
 module.exports = mongoose.model('Batch', batchSchema);

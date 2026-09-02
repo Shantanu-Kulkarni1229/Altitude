@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 const razorpay = require('../config/razorpay');
 const Batch = require('../models/Batch');
 const AddOn = require('../models/AddOn');
@@ -6,13 +7,25 @@ const Booking = require('../models/Booking');
 const { checkBudget, checkFitness, checkAddonCap, logGuardrailDecision } = require('../utils/guardrails');
 
 class BookingService {
-  async processBookingAttempt(data) {
-    const { batchId, customerId, customerFitnessLevel, addOnIds, source, maxBudget } = data;
+  async processBookingAttempt(data, correlationId = uuidv4()) {
+    const { batchId, customerId, customerFitnessLevel, addOnIds, source, maxBudget, idempotencyKey } = data;
+
+    // 1. Idempotency Check
+    if (idempotencyKey) {
+      const existingBooking = await Booking.findOne({ idempotencyKey }).populate('batchId');
+      if (existingBooking) {
+        await logGuardrailDecision('system', 'booking_attempt', 'duplicate_rejected', 'Duplicate request detected, returning existing result', existingBooking.totalAmount, 'duplicate_rejected', existingBooking._id, correlationId);
+        return { 
+          booking: existingBooking, 
+          order: { id: existingBooking.razorpayOrderId }, 
+          totalAmount: existingBooking.totalAmount 
+        };
+      }
+    }
     
     const batch = await Batch.findOne({ batchId }).populate('trekId');
-    if (!batch) {
-      throw new Error('Batch not found');
-    }
+    if (!batch) throw new Error('Batch not found');
+    
     const trek = batch.trekId;
 
     let addOns = [];
@@ -24,28 +37,34 @@ class BookingService {
     
     const totalAmount = batch.price + addonsTotal;
 
-    // 1. Fitness Check
+    const trace = [];
+    
+    // Evaluate Guardrails
     const fitnessResult = checkFitness(customerFitnessLevel, trek.minFitnessLevel);
-    if (!fitnessResult.passed) {
-      await logGuardrailDecision(source || 'human', 'booking_attempt', 'rejected', fitnessResult.reason, totalAmount, 'failure');
-      throw new Error(fitnessResult.reason);
-    }
+    trace.push({ check: 'Fitness', passed: fitnessResult.passed, reason: fitnessResult.reason });
 
-    // 2. Add-on Cap Check
     const addonResult = checkAddonCap(trek.basePrice, addonsTotal);
-    if (!addonResult.passed) {
-      await logGuardrailDecision(source || 'human', 'booking_attempt', 'rejected', addonResult.reason, totalAmount, 'failure');
-      throw new Error(addonResult.reason);
-    }
+    trace.push({ check: 'AddonCap', passed: addonResult.passed, reason: addonResult.reason });
 
-    // 3. Budget Check (if maxBudget is provided)
     const budgetResult = checkBudget(totalAmount, maxBudget);
-    if (!budgetResult.passed) {
-      await logGuardrailDecision(source || 'human', 'booking_attempt', 'rejected', budgetResult.reason, totalAmount, 'failure');
-      throw new Error(budgetResult.reason);
+    trace.push({ check: 'Budget', passed: budgetResult.passed, reason: budgetResult.reason });
+
+    // Evaluate Slot (simulate check first)
+    const hasSlot = batch.slotsBooked < batch.totalSlots;
+    trace.push({ 
+      check: 'Slots', 
+      passed: hasSlot, 
+      reason: hasSlot ? 'Slot available' : 'Batch is fully booked or no slots remaining.' 
+    });
+
+    const anyFailed = trace.some(t => !t.passed);
+    if (anyFailed) {
+      const primaryReason = trace.find(t => !t.passed).reason;
+      await logGuardrailDecision(source || 'human', 'booking_attempt', 'rejected', primaryReason, totalAmount, 'failure', null, correlationId, trace);
+      throw new Error(primaryReason);
     }
 
-    // 4. Atomic Slot Check & Reservation
+    // 4. Atomic Slot Reservation (since all logic passed)
     const updatedBatch = await Batch.findOneAndUpdate(
       { _id: batch._id, slotsBooked: { $lt: batch.totalSlots } },
       { $inc: { slotsBooked: 1 } },
@@ -53,8 +72,10 @@ class BookingService {
     );
 
     if (!updatedBatch) {
+      // Race condition hit during atomic update
       const reason = 'Availability Guardrail: Batch is fully booked or no slots remaining.';
-      await logGuardrailDecision(source || 'human', 'booking_attempt', 'rejected', reason, totalAmount, 'failure');
+      trace[3] = { check: 'Slots', passed: false, reason }; // update trace
+      await logGuardrailDecision(source || 'human', 'booking_attempt', 'rejected', reason, totalAmount, 'failure', null, correlationId, trace);
       throw new Error(reason);
     }
 
@@ -73,7 +94,7 @@ class BookingService {
     } catch (rzpErr) {
       await Batch.updateOne({ _id: batch._id }, { $inc: { slotsBooked: -1 } });
       const reason = 'System error: Failed to create payment order.';
-      await logGuardrailDecision('system', 'payment_creation', 'rejected', reason, totalAmount, 'failure');
+      await logGuardrailDecision('system', 'payment_creation', 'rejected', reason, totalAmount, 'failure', null, correlationId, trace);
       throw new Error(reason);
     }
 
@@ -87,17 +108,19 @@ class BookingService {
       totalAmount,
       source: source || 'human',
       status: 'pending_payment',
-      razorpayOrderId: order.id
+      razorpayOrderId: order.id,
+      idempotencyKey,
+      correlationId
     });
     
     await booking.save();
 
-    await logGuardrailDecision(source || 'human', 'booking_attempt', 'approved', 'All guardrails passed, slot reserved, pending payment.', totalAmount, 'success', booking._id);
+    await logGuardrailDecision(source || 'human', 'booking_attempt', 'approved', 'All guardrails passed, slot reserved, pending payment.', totalAmount, 'success', booking._id, correlationId, trace);
 
     return { booking, order, totalAmount };
   }
 
-  async confirmBooking(data) {
+  async confirmBooking(data, correlationId = uuidv4()) {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, bookingId } = data;
     
     const booking = await Booking.findOne({ bookingId, status: 'pending_payment' });
@@ -113,7 +136,7 @@ class BookingService {
       booking.status = 'rejected';
       booking.outcomeReason = 'Payment signature mismatch. Slot released.';
       await booking.save();
-      await logGuardrailDecision('system', 'payment_verification', 'rejected', 'Invalid payment signature.', booking.totalAmount, 'failure', booking._id);
+      await logGuardrailDecision('system', 'payment_verification', 'rejected', 'Invalid payment signature.', booking.totalAmount, 'failure', booking._id, correlationId);
       throw new Error('Invalid payment signature');
     }
 
@@ -122,7 +145,49 @@ class BookingService {
     booking.outcomeReason = 'Payment successful and verified.';
     await booking.save();
 
-    await logGuardrailDecision('system', 'payment_verification', 'approved', 'Payment successful.', booking.totalAmount, 'success', booking._id);
+    await logGuardrailDecision('system', 'payment_verification', 'approved', 'Payment successful.', booking.totalAmount, 'success', booking._id, correlationId);
+
+    return booking;
+  }
+
+  async cancelBooking(bookingId, reason, correlationId = uuidv4()) {
+    const booking = await Booking.findOne({ bookingId, status: 'confirmed' });
+    if (!booking) throw new Error('Valid confirmed booking not found');
+
+    // Release slot atomically
+    await Batch.findOneAndUpdate(
+      { _id: booking.batchId, slotsBooked: { $gt: 0 } },
+      { $inc: { slotsBooked: -1 }, status: 'open' }
+    );
+
+    booking.status = 'cancelled';
+    booking.outcomeReason = reason || 'Customer requested cancellation';
+    await booking.save();
+
+    await logGuardrailDecision('human', 'booking_cancellation', 'approved', booking.outcomeReason, booking.totalAmount, 'success', booking._id, correlationId);
+
+    return booking;
+  }
+
+  // Webhook specific confirmation
+  async confirmViaWebhook(payload, signature, correlationId = uuidv4()) {
+    const secret = process.env.RAZORPAY_KEY_SECRET || 'secret_placeholder';
+    const isValid = crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex') === signature;
+    
+    if (!isValid) throw new Error('Invalid webhook signature');
+
+    const paymentEntity = payload.payload.payment.entity;
+    const razorpayOrderId = paymentEntity.order_id;
+    
+    const booking = await Booking.findOne({ razorpayOrderId, status: 'pending_payment' });
+    if (!booking) return; // Already processed or invalid
+
+    booking.status = 'confirmed';
+    booking.razorpayPaymentId = paymentEntity.id;
+    booking.outcomeReason = 'Payment confirmed via webhook.';
+    await booking.save();
+
+    await logGuardrailDecision('system', 'webhook_verification', 'approved', 'Payment confirmed via webhook.', booking.totalAmount, 'success', booking._id, correlationId);
 
     return booking;
   }

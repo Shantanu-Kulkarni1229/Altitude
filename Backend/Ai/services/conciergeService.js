@@ -11,6 +11,23 @@ class ConciergeService {
       // 1. Extraction
       const extractionResult = await extractionService.extractSignals(message);
       
+      // Handle Booking Intent
+      if (extractionResult.confidence === 'high' && extractionResult.signals.isBookingIntent) {
+        if (context.lastTrekId) {
+          return {
+            type: 'booking_redirect',
+            text: 'I can help you book that right away! Let me take you to the booking checkout page for that trek.',
+            data: { trekId: context.lastTrekId }
+          };
+        } else {
+          return {
+            type: 'clarification',
+            text: 'I can help you book! Which trek would you like to book?',
+            data: null
+          };
+        }
+      }
+
       if (extractionResult.confidence === 'low') {
         return {
           type: 'clarification',
