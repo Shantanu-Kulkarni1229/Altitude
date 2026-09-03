@@ -9,22 +9,27 @@
     "seed": "node seed.js",
     "ai-buyer": "node scripts/aiBuyerAgent.js",
     "ai-buyer:fail": "node scripts/aiBuyerAgent.js --fail=fitness",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "mcp-server": "node mcp-server/index.js",
+    "mcp-buyer": "node scripts/mcpBuyerAgent.js",
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
     "mongoose": "^9.9.3",
     "razorpay": "^2.9.8",
-    "uuid": "^14.0.2"
+    "uuid": "^14.0.2",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "playwright": "^1.62.1"
   }
 }

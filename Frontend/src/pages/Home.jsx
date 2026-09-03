@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Frown, Sparkles, ShieldCheck, Bot } from 'lucide-react';
 import TrekCard from '../components/TrekCard';
 import axios from 'axios';
+import { API_BASE_URL } from '../lib/api';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -12,7 +13,7 @@ export default function Home() {
   useEffect(() => {
     const fetchTreks = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/v1/treks');
+        const response = await axios.get(`${API_BASE_URL}/api/v1/treks`);
         setTreks(response.data.data);
       } catch (error) {
         console.error('Error fetching treks:', error);
@@ -127,7 +128,7 @@ export default function Home() {
             </div>
             <h3 className="text-xl font-bold text-stone-900 mb-2">No treks found</h3>
             <p className="text-stone-500 max-w-md mx-auto mb-6">
-              We couldn't find any treks matching your current filters. Try adjusting your search criteria, or ask Maya — she'll find you something you'll love.
+              We couldn't find any treks matching your current filters. Try adjusting your search criteria, or ask Altia — they'll find you something you'll love.
             </p>
             <button
               onClick={() => { setSearchQuery(''); setDifficultyFilter('All'); }}

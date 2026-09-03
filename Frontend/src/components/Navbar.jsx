@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { ShieldCheck, User } from 'lucide-react';
+import { ShieldCheck, User, Bot } from 'lucide-react';
 import logo from '../assets/Altitude Logo.png';
 
 const navLinkClass = ({ isActive }) =>
@@ -19,6 +19,10 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-8">
             <NavLink to="/" end className={navLinkClass}>Discover</NavLink>
             <NavLink to="/bookings" className={navLinkClass}>My Bookings</NavLink>
+            <NavLink to="/agent-demo" className={({ isActive }) => `${navLinkClass({ isActive })} flex items-center gap-1.5`}>
+              <Bot className="h-3.5 w-3.5" />
+              Live Agent Demo
+            </NavLink>
             <NavLink to="/admin" className={({ isActive }) => `${navLinkClass({ isActive })} flex items-center gap-1.5`}>
               <ShieldCheck className="h-3.5 w-3.5" />
               Admin

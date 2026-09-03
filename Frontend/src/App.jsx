@@ -5,6 +5,7 @@ import Home from './pages/Home';
 import TrekDetail from './pages/TrekDetail';
 import MyBookings from './pages/MyBookings';
 import AdminAudit from './pages/AdminAudit';
+import LiveAgentDemo from './pages/LiveAgentDemo';
 import ConciergePanel from './components/ConciergePanel';
 import chatLogo from './assets/altitude chatbot Logo.png';
 
@@ -20,6 +21,7 @@ const App = () => {
         <Route path="/trek/:id" element={<TrekDetail />} />
         <Route path="/bookings" element={<MyBookings />} />
         <Route path="/admin" element={<AdminAudit />} />
+        <Route path="/agent-demo" element={<LiveAgentDemo />} />
       </Routes>
 
       <ConciergePanel isOpen={isConciergeOpen} setIsOpen={setIsConciergeOpen} />

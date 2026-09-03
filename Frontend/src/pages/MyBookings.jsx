@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, MapPin, CheckCircle, XCircle, Clock3, Compass } from 'lucide-react';
 import axios from 'axios';
+import { API_BASE_URL } from '../lib/api';
 
 const statusStyles = {
   confirmed: 'bg-emerald-100 text-emerald-700',
@@ -17,7 +18,7 @@ export default function MyBookings() {
   useEffect(() => {
     const fetchBookings = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/v1/bookings/user/cust_123');
+        const res = await axios.get(`${API_BASE_URL}/api/v1/bookings/user/cust_123`);
         setBookings(res.data.data);
       } catch (error) {
         console.error('Error fetching bookings', error);
@@ -31,7 +32,7 @@ export default function MyBookings() {
   const handleCancel = async (bookingId) => {
     if(!window.confirm('Are you sure you want to cancel this booking?')) return;
     try {
-      await axios.post(`http://localhost:5000/api/v1/bookings/${bookingId}/cancel`);
+      await axios.post(`${API_BASE_URL}/api/v1/bookings/${bookingId}/cancel`);
       setBookings(prev => prev.map(b => b.bookingId === bookingId ? { ...b, status: 'cancelled' } : b));
     } catch (error) {
       alert('Error cancelling booking');
@@ -63,7 +64,7 @@ export default function MyBookings() {
               <Compass className="w-8 h-8" />
             </div>
             <h3 className="text-xl font-bold text-stone-900 mb-2">No bookings yet</h3>
-            <p className="text-stone-500 max-w-md mx-auto mb-6">Your next adventure is one conversation away — browse treks or ask Maya to find you one.</p>
+            <p className="text-stone-500 max-w-md mx-auto mb-6">Your next adventure is one conversation away — browse treks or ask Altia to find you one.</p>
             <Link to="/" className="bg-stone-950 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-stone-800 transition-colors">
               Explore treks
             </Link>

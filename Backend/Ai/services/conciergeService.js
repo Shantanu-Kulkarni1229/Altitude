@@ -50,6 +50,19 @@ function describeSignals(signals) {
   return parts.length > 0 ? parts.join(', ') : 'something great';
 }
 
+// Plain-English summary for the audit log (never raw JSON) — the full
+// structured signals still go in `detail` for anyone who wants to drill in.
+function describeSignalsForAudit(signals) {
+  const parts = [];
+  if (signals.difficulty) parts.push(`${signals.difficulty} difficulty`);
+  if (signals.budgetCeiling) parts.push(`budget ₹${Number(signals.budgetCeiling).toLocaleString('en-IN')}/person`);
+  if (signals.month) parts.push(`timing "${signals.month}"`);
+  if (signals.travelers > 1) parts.push(`${signals.travelers} travelers`);
+  if (signals.customerName) parts.push(`name captured`);
+  if (signals.customerEmail) parts.push(`email captured`);
+  return parts;
+}
+
 class ConciergeService {
   async handleChatMessage(message, context = {}) {
     const correlationId = context.correlationId || uuidv4();
@@ -63,9 +76,13 @@ class ConciergeService {
       const incomingSignals = { ...extractionResult.signals, ...contactFromText };
       const signals = mergeSignals(context.priorSignals, incomingSignals);
 
+      const understoodParts = describeSignalsForAudit(signals);
       await this._logAiEvent({
         action: 'signal_extraction',
-        reason: `confidence=${extractionResult.confidence}; thisTurn=${JSON.stringify(incomingSignals)}; merged=${JSON.stringify(signals)}`,
+        reason: understoodParts.length > 0
+          ? `Understood ${understoodParts.join(', ')} (${extractionResult.confidence} confidence).`
+          : `Couldn't confidently understand this message yet (${extractionResult.confidence} confidence).`,
+        detail: { confidence: extractionResult.confidence, thisTurn: incomingSignals, merged: signals },
         correlationId
       });
 
@@ -130,7 +147,8 @@ class ConciergeService {
         if (isAlternative) {
           await this._logAiEvent({
             action: 'sales_pivot',
-            reason: `No exact match for "${describeSignals(signals)}" — pivoted to closest alternative(s): ${matches.map((m) => m.trekId).join(', ')}. Fitness safety filter was not relaxed.`,
+            reason: `No exact match for ${describeSignals(signals)} — pivoted to the closest alternative, "${matches[0].name}". The fitness safety guardrail was not relaxed to make this pivot.`,
+            detail: { requestedSignals: signals, alternatives: matches.map((m) => ({ trekId: m.trekId, name: m.name })) },
             correlationId
           });
         }
@@ -155,7 +173,13 @@ class ConciergeService {
 
       await this._logAiEvent({
         action: 'trek_recommendation',
-        reason: `top=${topTrek.trekId || topTrek._id}; isAlternative=${isAlternative}; reasoning="${(topTrek.reasoning || '').slice(0, 200)}"; suggestedAddon=${suggestedAddon ? suggestedAddon.addonName : 'none'}`,
+        reason: `Recommended "${topTrek.name}"${isAlternative ? ' (closest alternative, not an exact match)' : ''}.${suggestedAddon ? ` Suggested add-on: ${suggestedAddon.addonName}.` : ''}`,
+        detail: {
+          trekId: topTrek.trekId || topTrek._id,
+          isAlternative,
+          aiReasoning: topTrek.reasoning,
+          suggestedAddon
+        },
         correlationId
       });
 
@@ -199,10 +223,12 @@ class ConciergeService {
     }
 
     const answer = await recommendationService.answerTrekQuestion(trek, question);
+    const shortQuestion = question.length > 80 ? `${question.slice(0, 80)}…` : question;
 
     await this._logAiEvent({
       action: 'trek_info_request',
-      reason: `trekId=${trekId}; question="${question.slice(0, 150)}"`,
+      reason: `Answered a question about "${trek.name}": "${shortQuestion}"`,
+      detail: { trekId, question, answer },
       correlationId
     });
 
@@ -286,7 +312,8 @@ class ConciergeService {
 
     await this._logAiEvent({
       action: 'campaign_nudge',
-      reason: `Proactive resume-checkout nudge offered for trek=${trekId} (${trekName || 'unknown'}) batch=${batchId}.`,
+      reason: `Offered to resume the abandoned checkout for "${trekName || 'a trek'}" — one nudge per session, no discount applied.`,
+      detail: { trekId, batchId },
       correlationId: id
     });
 
@@ -300,13 +327,14 @@ class ConciergeService {
   // Persists a non-monetary AI reasoning step (extraction / recommendation)
   // to the same audit trail used for booking decisions, so the "why did the
   // AI suggest this" trail is queryable, not just the eventual money action.
-  async _logAiEvent({ action, reason, correlationId }) {
+  async _logAiEvent({ action, reason, detail, correlationId }) {
     try {
       const log = new AuditLog({
         actor: 'agent',
         action,
         decision: 'processed',
         reason,
+        detail,
         outcome: 'success',
         correlationId
       });
@@ -322,7 +350,8 @@ class ConciergeService {
         actor: 'system',
         action: 'ai_chat_attempt',
         decision: 'fallback',
-        reason: `LLM service unavailable or timed out. User message: "${(message || '').slice(0, 300)}"`,
+        reason: 'The AI service was temporarily unavailable, so the concierge gracefully switched to a fallback message instead of failing outright.',
+        detail: { userMessage: (message || '').slice(0, 300) },
         outcome: 'fallback',
         correlationId
       });

@@ -12,6 +12,7 @@ const auditRoutes = require('./routes/auditRoutes');
 const chatRoutes = require('../Ai/routes/chat');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const agentRoutes = require('./routes/agentRoutes');
+const demoRoutes = require('./routes/demoRoutes');
 const { LLMService } = require('../Ai/services/llmService');
 const { logGuardrailDecision } = require('./utils/guardrails');
 
@@ -39,6 +40,17 @@ const chatLimiter = rateLimit({
     );
     res.status(options.statusCode).json(options.message);
   }
+});
+
+// The live demo panel spawns a real process per run (hitting real Groq +
+// Razorpay test APIs) — cap it hard so a public link can't be used to spam
+// the server or those upstream APIs.
+const demoLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many demo runs from this IP — please wait a few minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 // Tier 2.3: Health Check Endpoint
@@ -70,6 +82,7 @@ app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/chat', chatLimiter, chatRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/agent', agentRoutes);
+app.use('/api/v1/demo', demoLimiter, demoRoutes);
 app.get('/api/v1/openapi.json', (req, res) => res.sendFile(require('path').join(__dirname, '..', 'openapi.json')));
 
 // Global Error Handler

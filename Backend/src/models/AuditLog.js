@@ -12,7 +12,8 @@ const auditLogSchema = new mongoose.Schema({
     required: true,
     enum: ['approved', 'rejected', 'fallback', 'processed'] 
   },
-  reason: { type: String, required: true },
+  reason: { type: String, required: true }, // always a plain-English sentence — never raw code/JSON
+  detail: { type: mongoose.Schema.Types.Mixed }, // optional structured data behind an admin "technical details" toggle
   amount: { type: Number }, // Optional, if money is involved
   bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking' }, // Optional
   outcome: { 

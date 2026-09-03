@@ -4,10 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import TrekCard from './TrekCard';
 import chatLogo from '../assets/altitude chatbot Logo.png';
 import axios from 'axios';
+import { API_BASE_URL } from '../lib/api';
 
 export default function ConciergePanel({ isOpen, setIsOpen }) {
   const [messages, setMessages] = useState([
-    { id: 1, type: 'concierge', text: "Hey there! I'm Maya, your Altitude trek expert — I've booked hundreds of adventurers onto their perfect trek. What kind of experience are you after?" }
+    { id: 1, type: 'concierge', text: "Hey there! I'm Altia, your Altitude trek expert — I've booked hundreds of adventurers onto their perfect trek. What kind of experience are you after?" }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
   // follow-up like "cheaper please" still know the customer wants an
   // extreme trek, instead of forgetting what was said two messages ago.
   const priorSignals = useRef({});
-  // Set while Maya is waiting on the customer's name/email to finish a
+  // Set while Altia is waiting on the customer's name/email to finish a
   // booking — echoed back by the backend each turn until it's resolved.
   const pendingBooking = useRef(null);
 
@@ -54,7 +55,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
     }
 
     sessionStorage.setItem('altitude_nudge_shown', '1');
-    axios.post('http://localhost:5000/api/v1/chat/abandoned-nudge', {
+    axios.post(`${API_BASE_URL}/api/v1/chat/abandoned-nudge`, {
       trekId: abandoned.trekId,
       trekName: abandoned.trekName,
       batchId: abandoned.batchId,
@@ -85,7 +86,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
     const lastTrekId = lastRecommendedMsg ? lastRecommendedMsg.trekRecommendation.trekId : null;
 
     try {
-      const response = await axios.post('http://localhost:5000/api/v1/chat/message', {
+      const response = await axios.post(`${API_BASE_URL}/api/v1/chat/message`, {
         message: currentInput,
         context: {
           lastTrekId,
@@ -165,11 +166,11 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
         <div className="px-5 py-4 border-b border-stone-100 flex justify-between items-center bg-white">
           <div className="flex items-center gap-3">
             <div className="relative w-10 h-10 rounded-full bg-stone-900 text-white flex items-center justify-center overflow-hidden p-1.5 shrink-0">
-              <img src={chatLogo} alt="Maya" className="w-full h-full object-contain" />
+              <img src={chatLogo} alt="Altia" className="w-full h-full object-contain" />
               <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
             </div>
             <div>
-              <h3 className="font-semibold text-stone-900 leading-tight">Maya</h3>
+              <h3 className="font-semibold text-stone-900 leading-tight">Altia</h3>
               <p className="text-xs text-emerald-600 font-medium">Trek expert · Online now</p>
             </div>
           </div>
@@ -256,7 +257,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Maya about a trek..."
+              placeholder="Ask Altia about a trek..."
               disabled={loading}
               className="w-full bg-stone-100 border-none rounded-full pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all placeholder:text-stone-400 disabled:opacity-50"
             />

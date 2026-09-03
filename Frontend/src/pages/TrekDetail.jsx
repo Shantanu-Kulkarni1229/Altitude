@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { MapPin, Clock, Calendar, Check, ChevronLeft, ShieldCheck, MessageCircle, X, Mountain, Sparkles, Minus, Plus, Users } from 'lucide-react';
 import axios from 'axios';
+import { API_BASE_URL } from '../lib/api';
 
 const difficultyColors = {
   easy: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -32,19 +33,19 @@ export default function TrekDetail() {
   // "Book with Concierge" button is used directly.
   const [isAgentInitiated, setIsAgentInitiated] = useState(false);
   const [agentCorrelationId, setAgentCorrelationId] = useState(null);
-  // Contact details — pre-filled from the chat if Maya already collected
+  // Contact details — pre-filled from the chat if Altia already collected
   // them, editable either way, and passed to Razorpay's `prefill` so the
   // customer only has to confirm a payment method at the very end.
   const [contact, setContact] = useState({ name: '', email: '', phone: '' });
   // Number of people this booking is for — prices and reserved slots both
-  // scale by this. Prefilled from the chat if Maya already asked ("for 4
+  // scale by this. Prefilled from the chat if Altia already asked ("for 4
   // people"), editable here either way.
   const [travelers, setTravelers] = useState(1);
 
   useEffect(() => {
     const fetchDetails = async () => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/v1/treks/${id}`);
+        const response = await axios.get(`${API_BASE_URL}/api/v1/treks/${id}`);
         setTrek(response.data.data.trek);
         setBatches(response.data.data.batches);
         setAddonsData(response.data.data.addons);
@@ -113,7 +114,7 @@ export default function TrekDetail() {
       const contactPayload = { customerName: contact.name, customerEmail: contact.email, customerPhone: contact.phone, travelers };
 
       if (isAgentInitiated) {
-        const agentRes = await axios.post('http://localhost:5000/api/v1/chat/book', {
+        const agentRes = await axios.post(`${API_BASE_URL}/api/v1/chat/book`, {
           batchId: selectedDeparture,
           customerId: "cust_123", // Mock customer
           customerFitnessLevel: 3, // Mock average fitness
@@ -129,7 +130,7 @@ export default function TrekDetail() {
         bookingId = agentRes.data.data.booking.bookingId;
         razorpayOrderId = agentRes.data.data.order.id;
       } else {
-        const createRes = await axios.post('http://localhost:5000/api/v1/bookings/create', {
+        const createRes = await axios.post(`${API_BASE_URL}/api/v1/bookings/create`, {
           batchId: selectedDeparture,
           customerId: "cust_123", // Mock customer
           customerFitnessLevel: 3, // Mock average fitness
@@ -161,7 +162,7 @@ export default function TrekDetail() {
           try {
             setCheckoutStep('processing');
             // 3. Confirm payment on backend
-            await axios.post('http://localhost:5000/api/v1/bookings/confirm', {
+            await axios.post(`${API_BASE_URL}/api/v1/bookings/confirm`, {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
@@ -499,7 +500,7 @@ export default function TrekDetail() {
                       <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
                       Your details
                       {contact.name && contact.email && (
-                        <span className="text-emerald-600 font-medium normal-case tracking-normal">— pre-filled by Maya</span>
+                        <span className="text-emerald-600 font-medium normal-case tracking-normal">— pre-filled by Altia</span>
                       )}
                     </div>
                     <input
