@@ -6,6 +6,16 @@ const AddOn = require('../models/AddOn');
 const Booking = require('../models/Booking');
 const { checkBudget, checkFitness, checkAddonCap, logGuardrailDecision } = require('../utils/guardrails');
 
+// Constant-time hex signature comparison (resistant to timing attacks).
+// Falls back to `false` on length mismatch instead of throwing.
+function timingSafeEqualHex(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a, 'hex');
+  const bufB = Buffer.from(b, 'hex');
+  if (bufA.length !== bufB.length || bufA.length === 0) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 class BookingService {
   async processBookingAttempt(data, correlationId = uuidv4()) {
     const { batchId, customerId, customerFitnessLevel, addOnIds, source, maxBudget, idempotencyKey } = data;
@@ -130,8 +140,8 @@ class BookingService {
     const generated_signature = crypto.createHmac('sha256', secret)
                                       .update(razorpay_order_id + "|" + razorpay_payment_id)
                                       .digest('hex');
-                                      
-    if (generated_signature !== razorpay_signature) {
+
+    if (!timingSafeEqualHex(generated_signature, razorpay_signature)) {
       await Batch.updateOne({ _id: booking.batchId }, { $inc: { slotsBooked: -1 } });
       booking.status = 'rejected';
       booking.outcomeReason = 'Payment signature mismatch. Slot released.';
@@ -169,13 +179,21 @@ class BookingService {
     return booking;
   }
 
-  // Webhook specific confirmation
-  async confirmViaWebhook(payload, signature, correlationId = uuidv4()) {
+  // Webhook specific confirmation.
+  // `rawBody` MUST be the exact bytes Razorpay sent (a Buffer) — the HMAC is
+  // computed over the raw payload, not a re-serialized JS object, because
+  // JSON.stringify() can reorder/re-escape fields and silently break
+  // signature verification against a real Razorpay webhook delivery.
+  async confirmViaWebhook(rawBody, signature, correlationId = uuidv4()) {
     const secret = process.env.RAZORPAY_KEY_SECRET || 'secret_placeholder';
-    const isValid = crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex') === signature;
-    
-    if (!isValid) throw new Error('Invalid webhook signature');
+    const bodyString = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : JSON.stringify(rawBody);
+    const generatedSignature = crypto.createHmac('sha256', secret).update(bodyString).digest('hex');
 
+    if (!timingSafeEqualHex(generatedSignature, signature)) {
+      throw new Error('Invalid webhook signature');
+    }
+
+    const payload = JSON.parse(bodyString);
     const paymentEntity = payload.payload.payment.entity;
     const razorpayOrderId = paymentEntity.order_id;
     
@@ -190,6 +208,28 @@ class BookingService {
     await logGuardrailDecision('system', 'webhook_verification', 'approved', 'Payment confirmed via webhook.', booking.totalAmount, 'success', booking._id, correlationId);
 
     return booking;
+  }
+
+  // Releases slots held by abandoned checkouts (payment never completed).
+  // Without this, a user who closes the Razorpay modal or navigates away
+  // holds a slot forever, which undercuts the "bounded" guarantee — a
+  // held-but-never-paid reservation is an unbounded resource lock.
+  async releaseExpiredBookings(maxAgeMinutes = 15) {
+    const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+    const expired = await Booking.find({ status: 'pending_payment', createdAt: { $lt: cutoff } });
+
+    for (const booking of expired) {
+      await Batch.findOneAndUpdate(
+        { _id: booking.batchId, slotsBooked: { $gt: 0 } },
+        { $inc: { slotsBooked: -1 }, status: 'open' }
+      );
+      booking.status = 'cancelled';
+      booking.outcomeReason = `Expired — payment not completed within ${maxAgeMinutes} minutes.`;
+      await booking.save();
+      await logGuardrailDecision('system', 'booking_expiry', 'approved', booking.outcomeReason, booking.totalAmount, 'success', booking._id, booking.correlationId);
+    }
+
+    return expired.length;
   }
 }
 

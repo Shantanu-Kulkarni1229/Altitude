@@ -15,6 +15,14 @@ router.post('/message', asyncHandler(async (req, res) => {
   res.status(200).json(response);
 }));
 
+// POST /api/v1/chat/abandoned-nudge
+// Bounded campaign orchestrator: frontend calls this at most once per
+// session when it detects an abandoned checkout in localStorage.
+router.post('/abandoned-nudge', asyncHandler(async (req, res) => {
+  const response = await conciergeService.getAbandonedCheckoutNudge(req.body);
+  res.status(200).json(response);
+}));
+
 // POST /api/v1/chat/book
 router.post('/book', asyncHandler(async (req, res) => {
   const bookingData = req.body;

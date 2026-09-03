@@ -13,6 +13,10 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
+  // One id per chat session, sent on every /chat/message call so the AI's
+  // extraction/recommendation/booking audit trail entries for this
+  // conversation share a correlationId in the admin audit log.
+  const sessionCorrelationId = useRef(crypto.randomUUID());
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -21,6 +25,42 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Bounded campaign orchestrator: on opening the panel, offer at most one
+  // proactive nudge per browser session if there's a recent abandoned
+  // checkout (Razorpay modal closed without paying). Gated server-side too
+  // (getAbandonedCheckoutNudge) and always audit-logged there.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (sessionStorage.getItem('altitude_nudge_shown')) return;
+
+    const raw = localStorage.getItem('altitude_abandoned_checkout');
+    if (!raw) return;
+
+    let abandoned;
+    try { abandoned = JSON.parse(raw); } catch { return; }
+    const ageMinutes = (Date.now() - abandoned.ts) / 60000;
+    if (ageMinutes > 15) {
+      localStorage.removeItem('altitude_abandoned_checkout');
+      return;
+    }
+
+    sessionStorage.setItem('altitude_nudge_shown', '1');
+    axios.post('http://localhost:5000/api/v1/chat/abandoned-nudge', {
+      trekId: abandoned.trekId,
+      trekName: abandoned.trekName,
+      batchId: abandoned.batchId,
+      correlationId: sessionCorrelationId.current
+    }).then(({ data }) => {
+      if (data.type !== 'campaign_nudge') return;
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        type: 'concierge',
+        text: data.text,
+        campaignNudge: { trekId: data.data.trekId }
+      }]);
+    }).catch(() => { /* best-effort nudge; silent on failure */ });
+  }, [isOpen]);
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -39,14 +79,18 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
     try {
       const response = await axios.post('http://localhost:5000/api/v1/chat/message', {
         message: currentInput,
-        context: { lastTrekId }
+        context: { lastTrekId, correlationId: sessionCorrelationId.current }
       });
 
       const { type, text, data } = response.data;
 
       if (type === 'booking_redirect') {
         setIsOpen(false);
-        navigate(`/trek/${data.trekId}?checkout=true`);
+        // via=agent + corr tell the checkout page this booking was AI-initiated,
+        // so it reserves through the agent-attributed path (source: 'agent')
+        // instead of the default human checkout, and shares this session's
+        // correlationId so the whole conversation-to-booking chain is traceable.
+        navigate(`/trek/${data.trekId}?checkout=true&via=agent&corr=${sessionCorrelationId.current}`);
         return;
       }
       
@@ -136,10 +180,25 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
             )}
 
             {msg.suggestedAddOn && (
-              <div className="mt-2 ml-2 flex items-center gap-1.5 text-xs text-blue-600 font-medium">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Suggested Add-on: {msg.suggestedAddOn.name}</span>
+              <div className="mt-2 ml-2 max-w-[85%] flex items-start gap-1.5 text-xs text-blue-600 font-medium">
+                <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>
+                  Suggested add-on: <strong>{msg.suggestedAddOn.addonName}</strong> — {msg.suggestedAddOn.reason} (stays within the add-on spending cap for this trek)
+                </span>
               </div>
+            )}
+
+            {msg.campaignNudge && (
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  navigate(`/trek/${msg.campaignNudge.trekId}?checkout=true&via=agent&corr=${sessionCorrelationId.current}`);
+                }}
+                className="mt-2 ml-2 flex items-center gap-1.5 text-xs font-semibold text-white bg-stone-900 hover:bg-stone-800 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Resume booking
+              </button>
             )}
 
             {msg.isFallback && msg.id !== 1 && (

@@ -1,0 +1,152 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Altitude Merchant API",
+    "version": "1.0.0",
+    "description": "Trek marketplace API, transactable by both human frontends and AI buyer agents. Every booking-affecting call is guardrail-gated (fitness, add-on cap, budget, slot availability) and written to an append-only audit trail (GET /api/v1/audit). Start at GET /api/v1/agent/catalog for a machine-readable product + capability manifest."
+  },
+  "servers": [{ "url": "http://localhost:5000" }],
+  "paths": {
+    "/api/v1/agent/catalog": {
+      "get": {
+        "summary": "Agent-readable catalog + capability manifest",
+        "description": "Structured product/offer catalog plus a description of every endpoint an agent needs to transact end-to-end.",
+        "responses": { "200": { "description": "Catalog document" } }
+      }
+    },
+    "/api/v1/treks": {
+      "get": {
+        "summary": "List treks (human-facing catalog)",
+        "parameters": [
+          { "name": "difficulty", "in": "query", "schema": { "type": "string", "enum": ["easy", "moderate", "hard", "extreme"] } },
+          { "name": "region", "in": "query", "schema": { "type": "string" } },
+          { "name": "minPrice", "in": "query", "schema": { "type": "number" } },
+          { "name": "maxPrice", "in": "query", "schema": { "type": "number" } }
+        ],
+        "responses": { "200": { "description": "Array of treks" } }
+      }
+    },
+    "/api/v1/treks/{trekId}": {
+      "get": {
+        "summary": "Trek detail: trek + its batches + all add-ons",
+        "parameters": [{ "name": "trekId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "{ trek, batches, addons }" } }
+      }
+    },
+    "/api/v1/treks/addons/all": {
+      "get": { "summary": "List all add-ons", "responses": { "200": { "description": "Array of add-ons" } } }
+    },
+    "/api/v1/chat/message": {
+      "post": {
+        "summary": "Conversational discovery (extraction -> retrieval -> recommendation)",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+              "message": { "type": "string" },
+              "context": { "type": "object", "properties": {
+                "lastTrekId": { "type": "string" },
+                "correlationId": { "type": "string" }
+              } }
+            }
+          } } }
+        },
+        "responses": { "200": { "description": "One of: recommendation | clarification | booking_redirect | no_match | fallback" } }
+      }
+    },
+    "/api/v1/chat/abandoned-nudge": {
+      "post": {
+        "summary": "Bounded campaign orchestrator: one proactive nudge to resume an abandoned checkout",
+        "description": "Frontend calls this at most once per session when a localStorage-tracked abandoned checkout is detected. Always writes an audit entry (action=campaign_nudge).",
+        "responses": { "200": { "description": "{ type: 'campaign_nudge' | 'no_nudge', text, data }" } }
+      }
+    },
+    "/api/v1/chat/book": {
+      "post": {
+        "summary": "Agent-attributed reservation (source=agent). Runs the same guardrails as human checkout.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["batchId", "customerId", "customerFitnessLevel"],
+            "properties": {
+              "batchId": { "type": "string" },
+              "customerId": { "type": "string" },
+              "customerFitnessLevel": { "type": "number" },
+              "addOnIds": { "type": "array", "items": { "type": "string" } },
+              "maxBudget": { "type": "number" },
+              "idempotencyKey": { "type": "string" },
+              "correlationId": { "type": "string" }
+            }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "booking_success { booking, order, totalAmount } or booking_failure { text: <guardrail reason> }" }
+        }
+      }
+    },
+    "/api/v1/bookings/create": {
+      "post": {
+        "summary": "Human-attributed reservation (source=human). Same guardrail pipeline as /chat/book.",
+        "responses": { "201": { "description": "{ bookingId, razorpayOrderId, totalAmount }" }, "400": { "description": "Guardrail rejection" } }
+      }
+    },
+    "/api/v1/bookings/confirm": {
+      "post": {
+        "summary": "Verify Razorpay payment signature and confirm the booking",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature", "bookingId"],
+            "properties": {
+              "razorpay_order_id": { "type": "string" },
+              "razorpay_payment_id": { "type": "string" },
+              "razorpay_signature": { "type": "string" },
+              "bookingId": { "type": "string" }
+            }
+          } } }
+        },
+        "responses": { "200": { "description": "Confirmed booking" }, "400": { "description": "Invalid signature" } }
+      }
+    },
+    "/api/v1/bookings/{bookingId}/cancel": {
+      "post": {
+        "summary": "Cancel a confirmed booking and atomically release its slot",
+        "parameters": [{ "name": "bookingId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Cancelled booking" } }
+      }
+    },
+    "/api/v1/bookings/webhook/razorpay": {
+      "post": {
+        "summary": "Razorpay webhook confirmation (server-to-server, raw-body HMAC verified)",
+        "responses": { "200": { "description": "OK" }, "400": { "description": "Invalid signature" } }
+      }
+    },
+    "/api/v1/bookings/user/{customerId}": {
+      "get": {
+        "summary": "List a customer's bookings",
+        "parameters": [{ "name": "customerId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Array of bookings" } }
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "summary": "Query the append-only decision/audit trail",
+        "parameters": [
+          { "name": "actor", "in": "query", "schema": { "type": "string", "enum": ["human", "agent", "system"] } },
+          { "name": "outcome", "in": "query", "schema": { "type": "string", "enum": ["success", "failure", "fallback", "duplicate_rejected", "rate_limit_exceeded"] } }
+        ],
+        "responses": { "200": { "description": "Array of audit log entries, each with a per-check trace[]" } }
+      }
+    },
+    "/api/v1/analytics/summary": {
+      "get": { "summary": "Revenue + guardrail-rejection breakdown", "responses": { "200": { "description": "Summary stats" } } }
+    },
+    "/api/v1/health": {
+      "get": { "summary": "Mongo + LLM health check", "responses": { "200": { "description": "healthy" }, "503": { "description": "degraded" } } }
+    }
+  }
+}

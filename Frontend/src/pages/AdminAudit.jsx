@@ -104,13 +104,21 @@ export default function AdminAudit() {
                     </td>
                     <td className="px-6 py-4">
                       <p className="font-medium text-stone-900">{log.action}</p>
-                      <p className="text-stone-500 text-xs mt-0.5">₹{log.amount?.toLocaleString()}</p>
+                      {log.amount != null && <p className="text-stone-500 text-xs mt-0.5">₹{log.amount.toLocaleString()}</p>}
                       <p className="text-stone-400 text-[10px] mt-1 font-mono">ID: {log.correlationId || log._id}</p>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {log.decision === 'approved' ? (
                         <span className="flex items-center gap-1 text-emerald-600 font-medium">
                           <Check className="w-4 h-4" /> Approved
+                        </span>
+                      ) : log.decision === 'processed' ? (
+                        <span className="flex items-center gap-1 text-blue-600 font-medium">
+                          <Bot className="w-4 h-4" /> AI Reasoning
+                        </span>
+                      ) : log.decision === 'fallback' ? (
+                        <span className="flex items-center gap-1 text-amber-600 font-medium">
+                          <AlertTriangle className="w-4 h-4" /> Fallback
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 text-rose-600 font-medium">

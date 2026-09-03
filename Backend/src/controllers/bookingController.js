@@ -42,9 +42,8 @@ exports.cancelBooking = async (req, res) => {
 exports.razorpayWebhook = async (req, res) => {
   const correlationId = req.headers['x-correlation-id'] || uuidv4();
   const signature = req.headers['x-razorpay-signature'];
-  // Assuming body parser middleware parsing JSON before this route, but raw needed for crypto in real apps.
-  // We'll use req.body as parsed JSON.
-  
+  // The route applies express.raw() so req.body is the raw request Buffer —
+  // required so the HMAC is computed over the exact bytes Razorpay signed.
   try {
     await bookingService.confirmViaWebhook(req.body, signature, correlationId);
     res.status(200).send('OK');

@@ -1,12 +1,12 @@
-const { OllamaService } = require('./ollamaService');
+const { LLMService } = require('./llmService');
 const extractionPrompt = require('../prompts/extractionPrompt');
 
 class ExtractionService {
   async extractSignals(customerMessage) {
     const prompt = extractionPrompt(customerMessage);
-    
-    // We let OllamaUnavailableError bubble up
-    const rawResponse = await OllamaService.generateResponse(prompt);
+
+    // We let LLMUnavailableError bubble up
+    const rawResponse = await LLMService.generateResponse(prompt);
     
     try {
       // Attempt to parse JSON

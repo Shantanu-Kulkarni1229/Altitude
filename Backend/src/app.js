@@ -11,6 +11,9 @@ const bookingRoutes = require('./routes/bookingRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const chatRoutes = require('../Ai/routes/chat');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const agentRoutes = require('./routes/agentRoutes');
+const { LLMService } = require('../Ai/services/llmService');
+const { logGuardrailDecision } = require('./utils/guardrails');
 
 const app = express();
 
@@ -25,25 +28,34 @@ const chatLimiter = rateLimit({
   message: { error: 'Too many chat requests from this IP, please try again after a minute' },
   standardHeaders: true,
   legacyHeaders: false,
+  handler: async (req, res, next, options) => {
+    await logGuardrailDecision(
+      'system',
+      'rate_limit',
+      'rejected',
+      `Chat rate limit exceeded for ${req.ip} (${options.max} req/${options.windowMs / 1000}s)`,
+      null,
+      'rate_limit_exceeded'
+    );
+    res.status(options.statusCode).json(options.message);
+  }
 });
 
 // Tier 2.3: Health Check Endpoint
 app.get('/api/v1/health', async (req, res) => {
-  const healthStatus = { overall: 'healthy', mongo: 'unreachable', ollama: 'unreachable' };
-  
+  const healthStatus = { overall: 'healthy', mongo: 'unreachable', llm: 'unknown' };
+
   // Check Mongo
   if (mongoose.connection.readyState === 1) healthStatus.mongo = 'healthy';
   else healthStatus.overall = 'degraded';
-  
-  // Check Ollama (Ping via fast fetch)
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const ollamaCheck = await fetch('http://127.0.0.1:11434', { signal: controller.signal });
-    clearTimeout(timeout);
-    if (ollamaCheck.ok) healthStatus.ollama = 'healthy';
-    else healthStatus.overall = 'degraded';
-  } catch (error) {
+
+  // LLM status reflects the outcome of the last real Groq call made by the
+  // concierge, rather than pinging an unrelated local port — this stayed
+  // wrong for a while because the service was originally scaffolded for a
+  // local Ollama deployment and only later switched to a cloud provider.
+  if (LLMService.lastCallOk === true) healthStatus.llm = 'healthy';
+  else if (LLMService.lastCallOk === false) {
+    healthStatus.llm = 'unreachable';
     healthStatus.overall = 'degraded';
   }
 
@@ -57,6 +69,8 @@ app.use('/api/v1/bookings', bookingRoutes);
 app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/chat', chatLimiter, chatRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/agent', agentRoutes);
+app.get('/api/v1/openapi.json', (req, res) => res.sendFile(require('path').join(__dirname, '..', 'openapi.json')));
 
 // Global Error Handler
 app.use(errorHandler);

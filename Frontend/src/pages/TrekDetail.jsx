@@ -23,9 +23,15 @@ export default function TrekDetail() {
   const [selectedDeparture, setSelectedDeparture] = useState(null);
   const [selectedAddons, setSelectedAddons] = useState([]);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState('summary'); 
+  const [checkoutStep, setCheckoutStep] = useState('summary');
   const [checkoutError, setCheckoutError] = useState('');
   const [finalBookingId, setFinalBookingId] = useState('');
+  // Whether this checkout should be booked through the agent-attributed
+  // path (source: 'agent', its own guardrail trace) rather than the human
+  // checkout path. True when the AI chat redirected here, or when the
+  // "Book with Concierge" button is used directly.
+  const [isAgentInitiated, setIsAgentInitiated] = useState(false);
+  const [agentCorrelationId, setAgentCorrelationId] = useState(null);
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -51,6 +57,10 @@ export default function TrekDetail() {
       const searchParams = new URLSearchParams(location.search);
       if (searchParams.get('checkout') === 'true') {
         setIsCheckoutOpen(true);
+        if (searchParams.get('via') === 'agent') {
+          setIsAgentInitiated(true);
+          setAgentCorrelationId(searchParams.get('corr'));
+        }
       }
     }
   }, [trek, loading, location.search]);
@@ -75,20 +85,43 @@ export default function TrekDetail() {
   const handleCheckout = async () => {
     setCheckoutStep('processing');
     try {
-      // 1. Create Booking & Run Guardrails
-      const createRes = await axios.post('http://localhost:5000/api/v1/bookings/create', {
-        batchId: selectedDeparture,
-        customerId: "cust_123", // Mock customer
-        customerFitnessLevel: 3, // Mock average fitness
-        addOnIds: selectedAddons,
-        source: 'human'
-      });
+      // 1. Create Booking & Run Guardrails.
+      // Agent-initiated checkouts (AI chat redirect or "Book with Concierge")
+      // go through /chat/book so the reservation is attributed to source:'agent'
+      // with its own audited guardrail trace, instead of the default human path.
+      let bookingId, razorpayOrderId;
 
-      const { bookingId, razorpayOrderId } = createRes.data;
+      if (isAgentInitiated) {
+        const agentRes = await axios.post('http://localhost:5000/api/v1/chat/book', {
+          batchId: selectedDeparture,
+          customerId: "cust_123", // Mock customer
+          customerFitnessLevel: 3, // Mock average fitness
+          addOnIds: selectedAddons,
+          correlationId: agentCorrelationId || undefined
+        });
+
+        if (agentRes.data.type === 'booking_failure') {
+          throw new Error(agentRes.data.text);
+        }
+
+        bookingId = agentRes.data.data.booking.bookingId;
+        razorpayOrderId = agentRes.data.data.order.id;
+      } else {
+        const createRes = await axios.post('http://localhost:5000/api/v1/bookings/create', {
+          batchId: selectedDeparture,
+          customerId: "cust_123", // Mock customer
+          customerFitnessLevel: 3, // Mock average fitness
+          addOnIds: selectedAddons,
+          source: 'human'
+        });
+
+        bookingId = createRes.data.bookingId;
+        razorpayOrderId = createRes.data.razorpayOrderId;
+      }
 
       // 2. Open Razorpay Window
       const options = {
-        key: "rzp_test_TTh1A8wfcPcoLQ", // Ensure this matches backend test key
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID, // Must match the backend's RAZORPAY_KEY_ID (test mode)
         amount: totalAmount * 100,
         currency: "INR",
         name: "Altitude",
@@ -104,6 +137,7 @@ export default function TrekDetail() {
               razorpay_signature: response.razorpay_signature,
               bookingId
             });
+            localStorage.removeItem('altitude_abandoned_checkout');
             setFinalBookingId(bookingId);
             setCheckoutStep('success');
           } catch (err) {
@@ -113,6 +147,14 @@ export default function TrekDetail() {
         },
         modal: {
           ondismiss: function () {
+            // Slot is already reserved (pending_payment) at this point — track
+            // it so the concierge can offer one bounded nudge to resume later.
+            localStorage.setItem('altitude_abandoned_checkout', JSON.stringify({
+              trekId: trek.trekId,
+              trekName: trek.name,
+              batchId: selectedDeparture,
+              ts: Date.now()
+            }));
             setCheckoutStep('summary'); // User closed window
           }
         }
@@ -326,16 +368,18 @@ export default function TrekDetail() {
               </div>
 
               <div className="space-y-3">
-                <button 
+                <button
                   disabled={!selectedDepData}
-                  onClick={() => setIsCheckoutOpen(true)}
+                  onClick={() => { setIsAgentInitiated(false); setIsCheckoutOpen(true); }}
                   className="w-full bg-stone-900 text-white font-semibold py-4 rounded-xl hover:bg-stone-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
                 >
                   <ShieldCheck className="w-5 h-5" />
                   Book Now
                 </button>
-                <button 
-                  className="w-full bg-white border-2 border-stone-200 text-stone-800 font-semibold py-3.5 rounded-xl hover:border-stone-300 hover:bg-stone-50 transition-colors flex justify-center items-center gap-2"
+                <button
+                  disabled={!selectedDepData}
+                  onClick={() => { setIsAgentInitiated(true); setAgentCorrelationId(null); setIsCheckoutOpen(true); }}
+                  className="w-full bg-white border-2 border-stone-200 text-stone-800 font-semibold py-3.5 rounded-xl hover:border-stone-300 hover:bg-stone-50 transition-colors flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <MessageCircle className="w-5 h-5" />
                   Book with Concierge
@@ -360,6 +404,12 @@ export default function TrekDetail() {
                   </button>
                 </div>
                 <div className="p-6">
+                  {isAgentInitiated && (
+                    <div className="mb-4 flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 w-fit px-2.5 py-1 rounded-full">
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      Booking via AI Concierge (source: agent)
+                    </div>
+                  )}
                   <div className="flex items-center gap-4 mb-6">
                     <img src={trek.coverPhoto} className="w-16 h-16 rounded-lg object-cover" alt="" />
                     <div>

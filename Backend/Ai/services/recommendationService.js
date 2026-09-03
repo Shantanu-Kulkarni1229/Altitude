@@ -1,4 +1,4 @@
-const { OllamaService } = require('./ollamaService');
+const { LLMService } = require('./llmService');
 const recommendationPrompt = require('../prompts/recommendationPrompt');
 const addonPrompt = require('../prompts/addonPrompt');
 
@@ -9,7 +9,7 @@ class RecommendationService {
     for (const match of matches) {
       try {
         const prompt = recommendationPrompt(match, signals);
-        const reasoning = await OllamaService.generateResponse(prompt);
+        const reasoning = await LLMService.generateResponse(prompt);
         explainedMatches.push({ ...match, reasoning: reasoning.trim() });
       } catch (error) {
         // Degrade gracefully if LLM fails just for reasoning
@@ -23,7 +23,7 @@ class RecommendationService {
   async suggestAddon(trek, fitnessLevel) {
     try {
       const prompt = addonPrompt(trek, fitnessLevel);
-      const rawResponse = await OllamaService.generateResponse(prompt);
+      const rawResponse = await LLMService.generateResponse(prompt);
       
       const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
       const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(rawResponse);
