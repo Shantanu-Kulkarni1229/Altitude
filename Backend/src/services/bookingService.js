@@ -18,7 +18,11 @@ function timingSafeEqualHex(a, b) {
 
 class BookingService {
   async processBookingAttempt(data, correlationId = uuidv4()) {
-    const { batchId, customerId, customerFitnessLevel, addOnIds, source, maxBudget, idempotencyKey } = data;
+    const { batchId, customerId, customerFitnessLevel, addOnIds, source, maxBudget, idempotencyKey, customerName, customerEmail, customerPhone } = data;
+    // Clamp to a sane range rather than trusting caller input outright —
+    // this becomes the multiplier for both money charged and slots reserved.
+    const rawTravelers = Number(data.travelers);
+    const travelers = Number.isInteger(rawTravelers) && rawTravelers > 0 ? Math.min(rawTravelers, 20) : 1;
 
     // 1. Idempotency Check
     if (idempotencyKey) {
@@ -44,27 +48,34 @@ class BookingService {
       addOns = await AddOn.find({ addOnId: { $in: addOnIds } });
       addonsTotal = addOns.reduce((sum, item) => sum + item.price, 0);
     }
-    
-    const totalAmount = batch.price + addonsTotal;
+
+    // Prices in the catalog are PER PERSON; the group pays perPersonTotal x travelers.
+    const perPersonTotal = batch.price + addonsTotal;
+    const totalAmount = perPersonTotal * travelers;
 
     const trace = [];
-    
+
     // Evaluate Guardrails
     const fitnessResult = checkFitness(customerFitnessLevel, trek.minFitnessLevel);
     trace.push({ check: 'Fitness', passed: fitnessResult.passed, reason: fitnessResult.reason });
 
+    // Add-on cap is a spend-vs-base-price ratio, so it's evaluated per-person
+    // (scaling both sides by `travelers` wouldn't change the ratio).
     const addonResult = checkAddonCap(trek.basePrice, addonsTotal);
     trace.push({ check: 'AddonCap', passed: addonResult.passed, reason: addonResult.reason });
 
-    const budgetResult = checkBudget(totalAmount, maxBudget);
+    // maxBudget is a per-person cap (matches how budgetCeiling search filters work).
+    const budgetResult = checkBudget(perPersonTotal, maxBudget);
     trace.push({ check: 'Budget', passed: budgetResult.passed, reason: budgetResult.reason });
 
-    // Evaluate Slot (simulate check first)
-    const hasSlot = batch.slotsBooked < batch.totalSlots;
-    trace.push({ 
-      check: 'Slots', 
-      passed: hasSlot, 
-      reason: hasSlot ? 'Slot available' : 'Batch is fully booked or no slots remaining.' 
+    // Evaluate Slot (simulate check first) — reserving for the whole group, not just one seat.
+    const hasSlot = (batch.slotsBooked + travelers) <= batch.totalSlots;
+    trace.push({
+      check: 'Slots',
+      passed: hasSlot,
+      reason: hasSlot
+        ? 'Slot available'
+        : `Not enough slots for ${travelers} traveler${travelers > 1 ? 's' : ''} — batch is full or doesn't have enough spots remaining.`
     });
 
     const anyFailed = trace.some(t => !t.passed);
@@ -74,16 +85,18 @@ class BookingService {
       throw new Error(primaryReason);
     }
 
-    // 4. Atomic Slot Reservation (since all logic passed)
+    // 4. Atomic Slot Reservation (since all logic passed) — reserves
+    // `travelers` slots in one compare-and-swap so a race for the last few
+    // spots can't over-book the batch, the same way the single-seat case worked.
     const updatedBatch = await Batch.findOneAndUpdate(
-      { _id: batch._id, slotsBooked: { $lt: batch.totalSlots } },
-      { $inc: { slotsBooked: 1 } },
+      { _id: batch._id, $expr: { $lte: [{ $add: ['$slotsBooked', travelers] }, '$totalSlots'] } },
+      { $inc: { slotsBooked: travelers } },
       { new: true }
     );
 
     if (!updatedBatch) {
       // Race condition hit during atomic update
-      const reason = 'Availability Guardrail: Batch is fully booked or no slots remaining.';
+      const reason = `Availability Guardrail: Not enough slots for ${travelers} traveler${travelers > 1 ? 's' : ''} — someone else just booked first.`;
       trace[3] = { check: 'Slots', passed: false, reason }; // update trace
       await logGuardrailDecision(source || 'human', 'booking_attempt', 'rejected', reason, totalAmount, 'failure', null, correlationId, trace);
       throw new Error(reason);
@@ -97,12 +110,12 @@ class BookingService {
     let order;
     try {
        order = await razorpay.orders.create({
-        amount: totalAmount * 100, 
+        amount: totalAmount * 100,
         currency: 'INR',
         receipt: `receipt_${Date.now()}`
       });
     } catch (rzpErr) {
-      await Batch.updateOne({ _id: batch._id }, { $inc: { slotsBooked: -1 } });
+      await Batch.updateOne({ _id: batch._id }, { $inc: { slotsBooked: -travelers } });
       const reason = 'System error: Failed to create payment order.';
       await logGuardrailDecision('system', 'payment_creation', 'rejected', reason, totalAmount, 'failure', null, correlationId, trace);
       throw new Error(reason);
@@ -114,6 +127,10 @@ class BookingService {
       batchId: batch._id,
       customerId,
       customerFitnessLevel,
+      customerName,
+      customerEmail,
+      customerPhone,
+      travelers,
       addOns: addOns.map(a => a._id),
       totalAmount,
       source: source || 'human',
@@ -142,7 +159,7 @@ class BookingService {
                                       .digest('hex');
 
     if (!timingSafeEqualHex(generated_signature, razorpay_signature)) {
-      await Batch.updateOne({ _id: booking.batchId }, { $inc: { slotsBooked: -1 } });
+      await Batch.updateOne({ _id: booking.batchId }, { $inc: { slotsBooked: -(booking.travelers || 1) } });
       booking.status = 'rejected';
       booking.outcomeReason = 'Payment signature mismatch. Slot released.';
       await booking.save();
@@ -164,10 +181,11 @@ class BookingService {
     const booking = await Booking.findOne({ bookingId, status: 'confirmed' });
     if (!booking) throw new Error('Valid confirmed booking not found');
 
-    // Release slot atomically
+    // Release slots atomically
+    const seats = booking.travelers || 1;
     await Batch.findOneAndUpdate(
-      { _id: booking.batchId, slotsBooked: { $gt: 0 } },
-      { $inc: { slotsBooked: -1 }, status: 'open' }
+      { _id: booking.batchId, slotsBooked: { $gte: seats } },
+      { $inc: { slotsBooked: -seats }, status: 'open' }
     );
 
     booking.status = 'cancelled';
@@ -219,9 +237,10 @@ class BookingService {
     const expired = await Booking.find({ status: 'pending_payment', createdAt: { $lt: cutoff } });
 
     for (const booking of expired) {
+      const seats = booking.travelers || 1;
       await Batch.findOneAndUpdate(
-        { _id: booking.batchId, slotsBooked: { $gt: 0 } },
-        { $inc: { slotsBooked: -1 }, status: 'open' }
+        { _id: booking.batchId, slotsBooked: { $gte: seats } },
+        { $inc: { slotsBooked: -seats }, status: 'open' }
       );
       booking.status = 'cancelled';
       booking.outcomeReason = `Expired — payment not completed within ${maxAgeMinutes} minutes.`;

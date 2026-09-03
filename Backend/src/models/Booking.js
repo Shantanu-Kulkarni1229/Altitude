@@ -5,6 +5,13 @@ const bookingSchema = new mongoose.Schema({
   batchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Batch', required: true },
   customerId: { type: String, required: true },
   customerFitnessLevel: { type: Number, required: true },
+  // Collected conversationally by the concierge (or typed at checkout) so
+  // Razorpay Checkout can be pre-filled — the customer only has to confirm
+  // a payment method, not retype their details into the payment gateway.
+  customerName: { type: String },
+  customerEmail: { type: String },
+  customerPhone: { type: String },
+  travelers: { type: Number, default: 1, min: 1 },
   addOns: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AddOn' }],
   totalAmount: { type: Number, required: true },
   source: { 
