@@ -6,6 +6,7 @@ const AddOn = require('../models/AddOn');
 const Booking = require('../models/Booking');
 const { checkBudget, checkFitness, checkAddonCap, logGuardrailDecision } = require('../utils/guardrails');
 const { timingSafeEqualHex } = require('../utils/crypto');
+const emailService = require('./emailService');
 
 class BookingService {
   async processBookingAttempt(data, correlationId = uuidv4()) {
@@ -165,6 +166,10 @@ class BookingService {
 
     await logGuardrailDecision('system', 'payment_verification', 'approved', 'Payment successful.', booking.totalAmount, 'success', booking._id, correlationId);
 
+    // Fire-and-forget — a slow or unavailable email provider must never
+    // delay or fail an already-confirmed booking's response to the client.
+    emailService.sendBookingReceipt(booking._id, correlationId).catch(() => {});
+
     return booking;
   }
 
@@ -215,6 +220,8 @@ class BookingService {
     await booking.save();
 
     await logGuardrailDecision('system', 'webhook_verification', 'approved', 'Payment confirmed via webhook.', booking.totalAmount, 'success', booking._id, correlationId);
+
+    emailService.sendBookingReceipt(booking._id, correlationId).catch(() => {});
 
     return booking;
   }

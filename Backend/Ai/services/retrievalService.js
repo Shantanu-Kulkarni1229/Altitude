@@ -28,12 +28,9 @@ class RetrievalService {
     return this._attachOpenBatches(treks);
   }
 
-  // Used when findMatches comes back empty: a real salesperson never just
-  // says "nothing matches" — they pivot to the closest thing the customer
-  // would actually like. Preference filters (difficulty, budget) are relaxed
-  // and re-scored by closeness to what was asked; the fitness safety filter
-  // is NEVER relaxed — we will not sell someone a trek their body can't
-  // handle just to close the deal.
+  // Used when findMatches comes back empty. Preference filters (difficulty,
+  // budget) relax and re-score by closeness; the fitness safety filter never
+  // relaxes.
   async findAlternatives(signals) {
     let treks = await Trek.find({}).lean();
 
@@ -54,6 +51,15 @@ class RetrievalService {
     return this._attachOpenBatches(scored);
   }
 
+  // A condensed, honest snapshot of what's actually in the catalog right
+  // now — grounding for the general-chat fallback so it can answer "do you
+  // have anything in Ladakh" or "what's your cheapest trek" without ever
+  // inventing a trek that doesn't exist.
+  async getCatalogSummary() {
+    const treks = await Trek.find({}).select('name region difficulty basePrice durationDays minFitnessLevel').lean();
+    return treks.map((t) => `${t.name} — ${t.region}, ${t.difficulty}, ${t.durationDays}d, ₹${t.basePrice}/person, min fitness ${t.minFitnessLevel}/10`);
+  }
+
   async _attachOpenBatches(treks) {
     const matches = [];
     for (const trek of treks) {
@@ -62,7 +68,7 @@ class RetrievalService {
         const slotsAvailable = Math.max(...batches.map((b) => b.totalSlots - b.slotsBooked));
         matches.push({ ...trek, batches, slotsAvailable });
       }
-      if (matches.length >= 3) break;
+      if (matches.length >= 4) break;
     }
     return matches;
   }

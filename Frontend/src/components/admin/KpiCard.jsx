@@ -10,9 +10,9 @@ const TONE = {
   flare: 'bg-flare-100 text-flare-600'
 };
 
-// Stat tile: label, value, icon-in-tone-chip. Used across every admin page
-// so a judge learns the vocabulary once. `as` lets a tile double as a
-// button (e.g. "Guardrail blocks" jumps into the Audit Trail pre-filtered).
+// Stat tile: label, value, icon-in-tone-chip, reused across every admin
+// page. `as` lets a tile double as a button (e.g. "Guardrail blocks" jumps
+// into the Audit Trail pre-filtered).
 export default function KpiCard({ icon: Icon, tone = 'ink', label, value, hint, as = 'div', onClick, index = 0 }) {
   const Comp = as === 'button' ? motion.button : motion.div;
   return (

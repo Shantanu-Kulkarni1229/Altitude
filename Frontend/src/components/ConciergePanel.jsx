@@ -3,9 +3,25 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Sparkles, ShieldCheck, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import TrekCard from './TrekCard';
+import RouteThinking from './logbook/RouteThinking';
 import chatLogo from '../assets/altitude chatbot Logo.png';
 import axios from 'axios';
 import { API_BASE_URL } from '../lib/api';
+
+// Chat replies are prose, not markdown, but the model reaches for **bold**
+// and line breaks — render just those instead of a full markdown parser.
+function FormattedText({ text }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <p className="text-[14.5px] leading-relaxed whitespace-pre-line">
+      {parts.map((part, i) =>
+        part.startsWith('**') && part.endsWith('**')
+          ? <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
+          : <React.Fragment key={i}>{part}</React.Fragment>
+      )}
+    </p>
+  );
+}
 
 export default function ConciergePanel({ isOpen, setIsOpen }) {
   const [messages, setMessages] = useState([
@@ -15,17 +31,13 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
-  // One id per chat session, sent on every /chat/message call so the AI's
-  // extraction/recommendation/booking audit trail entries for this
-  // conversation share a correlationId in the admin audit log.
+  // Shared across every /chat/message call so this conversation's audit
+  // trail entries share one correlationId.
   const sessionCorrelationId = useRef(crypto.randomUUID());
-  // Preferences (difficulty/budget/month/fitness) accumulated across the
-  // whole conversation, echoed back by the backend each turn. Lets a
-  // follow-up like "cheaper please" still know the customer wants an
-  // extreme trek, instead of forgetting what was said two messages ago.
+  // Preferences accumulated across the conversation, echoed back by the
+  // backend each turn (so "cheaper please" still knows the earlier ask).
   const priorSignals = useRef({});
-  // Set while Altia is waiting on the customer's name/email to finish a
-  // booking — echoed back by the backend each turn until it's resolved.
+  // Set while Altia is waiting on name/email to finish a booking.
   const pendingBooking = useRef(null);
 
   const scrollToBottom = () => {
@@ -36,10 +48,8 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
     scrollToBottom();
   }, [messages]);
 
-  // Bounded campaign orchestrator: on opening the panel, offer at most one
-  // proactive nudge per browser session if there's a recent abandoned
-  // checkout (Razorpay modal closed without paying). Gated server-side too
-  // (getAbandonedCheckoutNudge) and always audit-logged there.
+  // At most one proactive nudge per session for a recent abandoned checkout
+  // (also gated and audit-logged server-side, in getAbandonedCheckoutNudge).
   useEffect(() => {
     if (!isOpen) return;
     if (sessionStorage.getItem('altitude_nudge_shown')) return;
@@ -83,14 +93,20 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
     setInput('');
     setLoading(true);
 
-    const lastRecommendedMsg = currentMessages.slice().reverse().find(m => m.trekRecommendation);
-    const lastTrekId = lastRecommendedMsg ? lastRecommendedMsg.trekRecommendation.trekId : null;
+    const lastRecommendedMsg = currentMessages.slice().reverse().find(m => m.trekRecommendations?.length);
+    const lastTrekId = lastRecommendedMsg ? lastRecommendedMsg.trekRecommendations[0].trekId : null;
+    // All the treks last shown, not just the top pick, so a follow-up that
+    // names one specifically can resolve to that trek.
+    const recentTreks = lastRecommendedMsg
+      ? lastRecommendedMsg.trekRecommendations.map(t => ({ trekId: t.trekId, name: t.name }))
+      : [];
 
     try {
       const response = await axios.post(`${API_BASE_URL}/api/v1/chat/message`, {
         message: currentInput,
         context: {
           lastTrekId,
+          recentTreks,
           correlationId: sessionCorrelationId.current,
           priorSignals: priorSignals.current,
           pendingBooking: pendingBooking.current
@@ -103,11 +119,8 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
 
       if (type === 'booking_redirect') {
         setIsOpen(false);
-        // via=agent + corr tell the checkout page this booking was AI-initiated,
-        // so it reserves through the agent-attributed path (source: 'agent')
-        // instead of the default human checkout; name/email/phone (collected
-        // conversationally) let the Razorpay modal open pre-filled, so the
-        // customer only has to confirm a payment method.
+        // via=agent tells checkout to reserve through the agent-attributed path;
+        // prefilled contact details let Razorpay open ready to pay.
         const params = new URLSearchParams({ checkout: 'true', via: 'agent', corr: sessionCorrelationId.current });
         if (data.customerName) params.set('name', data.customerName);
         if (data.customerEmail) params.set('email', data.customerEmail);
@@ -121,8 +134,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
         id: Date.now() + 1,
         type: 'concierge',
         text: text,
-        trekRecommendation: data?.treks && data.treks.length > 0 ? data.treks[0] : null,
-        guardrail: data?.treks?.[0]?.reasoning || null,
+        trekRecommendations: data?.treks && data.treks.length > 0 ? data.treks : null,
         suggestedAddOn: data?.suggestedAddon || null,
         isAlternative: !!data?.isAlternative,
         isFallback: type === 'fallback'
@@ -169,7 +181,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 340, damping: 34 }}
-            className="fixed inset-y-0 right-0 w-[92%] max-w-[420px] bg-paper-50 shadow-2xl shadow-canvas-950/20 border-l border-paper-300 z-50 flex flex-col"
+            className="fixed inset-y-0 right-0 w-[92%] max-w-[460px] bg-paper-50 shadow-2xl shadow-canvas-950/20 border-l border-paper-300 z-50 flex flex-col"
           >
             <div className="px-5 py-4 border-b border-paper-200 flex justify-between items-center bg-canvas-950">
               <div className="flex items-center gap-3">
@@ -201,14 +213,8 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
                       ? 'bg-flare-500 text-white rounded-tr-md'
                       : 'bg-paper-50 border border-paper-300 text-ink-800 rounded-tl-md shadow-sm shadow-canvas-950/[0.03]'
                   }`}>
-                    <p className="text-[14.5px] leading-relaxed whitespace-pre-line">{msg.text}</p>
+                    <FormattedText text={msg.text} />
                   </div>
-
-                  {msg.trekRecommendation && (
-                    <div className="mt-2.5 w-[92%] ml-1">
-                      <TrekCard trek={msg.trekRecommendation} compact={true} />
-                    </div>
-                  )}
 
                   {msg.isAlternative && (
                     <div className="mt-2 ml-1 flex items-center gap-1.5 text-[11px] font-semibold text-brass-600 bg-brass-100 border border-brass-400/40 w-fit px-2 py-0.5 rounded-full">
@@ -216,10 +222,19 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
                     </div>
                   )}
 
-                  {msg.guardrail && !msg.isFallback && (
-                    <div className="mt-2 ml-1 flex items-start gap-1.5 text-xs text-pine-700 font-medium max-w-[92%]">
-                      <Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      <span>Why this one: {msg.guardrail}</span>
+                  {msg.trekRecommendations && (
+                    <div className="mt-2.5 w-[94%] ml-1 space-y-3">
+                      {msg.trekRecommendations.map((trek) => (
+                        <div key={trek.trekId}>
+                          <TrekCard trek={trek} compact={true} />
+                          {trek.reasoning && (
+                            <div className="mt-1.5 pl-1 flex items-start gap-1.5 text-xs text-pine-700 font-medium">
+                              <Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                              <span>{trek.reasoning}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
 
@@ -227,7 +242,7 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
                     <div className="mt-2 ml-1 max-w-[92%] flex items-start gap-1.5 text-xs text-seal-600 font-medium">
                       <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                       <span>
-                        Suggested add-on: <strong>{msg.suggestedAddOn.addonName}</strong> — {msg.suggestedAddOn.reason} (stays within the add-on spending cap for this trek)
+                        For your top pick, I'd add: <strong>{msg.suggestedAddOn.addonName}</strong> — {msg.suggestedAddOn.reason} (stays within the add-on spending cap for this trek)
                       </span>
                     </div>
                   )}
@@ -256,10 +271,8 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
               ))}
               {loading && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-start">
-                  <div className="bg-paper-50 border border-paper-300 text-ink-800 rounded-xl rounded-tl-md shadow-sm px-4 py-3 flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-ink-300 rounded-full animate-bounce"></span>
-                    <span className="w-1.5 h-1.5 bg-ink-300 rounded-full animate-bounce delay-100"></span>
-                    <span className="w-1.5 h-1.5 bg-ink-300 rounded-full animate-bounce delay-200"></span>
+                  <div className="bg-paper-50 border border-paper-300 rounded-xl rounded-tl-md shadow-sm px-4 py-3">
+                    <RouteThinking />
                   </div>
                 </motion.div>
               )}

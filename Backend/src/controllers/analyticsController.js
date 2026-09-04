@@ -45,8 +45,8 @@ exports.getSummary = async (req, res) => {
     };
 
     // AI reasoning activity — extraction/recommendation/pivot/info-request
-    // events aren't money actions, but they're the explainability trail a
-    // judge cares about just as much as the payment guardrails.
+    // events aren't money actions, but they're part of the explainability
+    // trail alongside the payment guardrails.
     const aiReasoningEvents = await AuditLog.countDocuments({
       actor: 'agent',
       action: { $in: ['signal_extraction', 'trek_recommendation', 'sales_pivot', 'trek_info_request', 'campaign_nudge'] }

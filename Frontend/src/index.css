@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* Expedition Logbook design system — see PRODUCT.md / .impeccable/surfaces/app.md */
+  /* Expedition Logbook design system */
 
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-sans: "Barlow", ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -31,12 +31,15 @@
   --color-ink-600: #525a4b;
   --color-ink-500: #6b7365;
   --color-ink-400: #8f9784;
+  --color-ink-300: #b0b7a4;
 
   /* flare — the one saturated accent (primary action) */
+  --color-flare-900: #5c2410;
   --color-flare-700: #b8431b;
   --color-flare-600: #d94f1e;
   --color-flare-500: #f0631f;
   --color-flare-400: #f68a4f;
+  --color-flare-300: #f9ac7c;
   --color-flare-100: #fde3d2;
   --color-flare-50: #fef3ec;
 
@@ -44,6 +47,9 @@
   --color-pine-700: #1f4d34;
   --color-pine-600: #2b6b47;
   --color-pine-500: #3a8a5c;
+  --color-pine-400: #5aa87c;
+  --color-pine-300: #82c29e;
+  --color-pine-200: #b3ddc4;
   --color-pine-100: #dcece1;
   --color-pine-50: #eef6f1;
 
@@ -51,6 +57,9 @@
   --color-rust-700: #7a2a1f;
   --color-rust-600: #9c3626;
   --color-rust-500: #b8452f;
+  --color-rust-400: #cc6a4d;
+  --color-rust-300: #dd9075;
+  --color-rust-200: #ecb7a3;
   --color-rust-100: #f5ddd5;
   --color-rust-50: #faece7;
 
@@ -63,6 +72,7 @@
   /* seal — AI/agent stamp ink (used sparingly, on the seal mark only) */
   --color-seal-700: #1f2a44;
   --color-seal-600: #2c3c5e;
+  --color-seal-300: #96a5c2;
   --color-seal-100: #dde3ee;
 }
 

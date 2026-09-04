@@ -4,10 +4,9 @@ const mongoose = require('mongoose');
 let connected = false;
 
 // Tests run against a *separate* database on the same cluster (same
-// connection string, `_test` appended to the db name) — never the database
-// the demo/judges will actually look at. Mongo creates it lazily on first
-// write, so no manual provisioning is needed, and a failed/aborted test run
-// can never leave stray bookings in the audit trail a judge is reading.
+// connection string, `_test` appended to the db name) — never the one the
+// live demo uses. Mongo creates it lazily on first write, so a failed or
+// aborted test run can never leave stray bookings in the real audit trail.
 function getTestMongoUri() {
   const raw = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/altitude';
   try {

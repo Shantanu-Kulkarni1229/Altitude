@@ -48,7 +48,7 @@ export default function Navbar() {
               className="flex items-center gap-1.5 text-sm font-medium text-canvas-400 hover:text-paper-100 transition-colors"
             >
               <Terminal className="h-3.5 w-3.5" />
-              Run Demo
+              Watch an AI Buy
             </NavLink>
             <NavLink
               to="/admin"

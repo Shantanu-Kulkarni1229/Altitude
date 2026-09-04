@@ -1,7 +1,6 @@
-// Thin client for the LLM backing the AI concierge. Currently calls Groq's
-// cloud chat-completions API (not a local Ollama instance, despite this
-// module's historical name) — kept isolated here so swapping providers only
-// touches this file.
+// Thin client for the LLM backing the AI concierge — calls Groq's cloud
+// chat-completions API, isolated here so swapping providers touches only
+// this file.
 class LLMUnavailableError extends Error {
   constructor(message) {
     super(message);

@@ -1,7 +1,6 @@
 // Integration tests — exercise the real bookingService against a real
 // MongoDB connection (isolated `_test` database, see test/setup.js) and the
-// real Razorpay test-mode API. These prove the specific claims the
-// hackathon's bar cares about: guardrails actually block before payment,
+// real Razorpay test-mode API: guardrails actually block before payment,
 // slot reservation is race-safe, group bookings reserve/price correctly,
 // and payment signatures are genuinely verified.
 require('dotenv').config();

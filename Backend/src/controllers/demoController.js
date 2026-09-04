@@ -1,11 +1,9 @@
 const path = require('path');
 const { spawn } = require('child_process');
 
-// Whitelisted demos only — never build a command from user input. Each of
-// these is exactly the same script a judge could clone the repo and run
-// themselves; this endpoint just runs it here and streams the output, so a
-// live Vercel/Render link can show the CLI-only agent demos without anyone
-// needing a terminal.
+// Whitelisted demos only — never build a command from user input. Streams
+// the same output these scripts print when run directly (`node scripts/...`),
+// so a deployed link can show them without a terminal.
 const DEMOS = {
   'ai-buyer': { script: 'scripts/aiBuyerAgent.js', args: [], label: 'AI buyer (REST) — happy path' },
   'ai-buyer-fail-fitness': { script: 'scripts/aiBuyerAgent.js', args: ['--fail=fitness'], label: 'AI buyer (REST) — deliberate fitness guardrail rejection' },

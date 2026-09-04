@@ -21,12 +21,14 @@ Altitude is a real Node/Express + MongoDB + React marketplace with a Razorpay te
 Frontend/ (React 19 + Vite, Tailwind)
   Home -> TrekDetail (browse, batch/add-on/traveler-count selection, Razorpay Checkout.js)
   ConciergePanel ("Altia" — sales-persona chat widget, wired to the AI layer)
-  AdminAudit (audit trail + guardrail-rejection chart + analytics dashboard)
+  LiveDemo (/demo — "Watch an AI Buy": runs the buyer scripts server-side, streams real output)
+  Admin dashboard (/admin — Overview, Audit Trail, AI Agent Activity, Guardrails & Safety, Catalog)
 
 Backend/
   src/                        core marketplace — the source of truth for money actions
     models/                   Trek, Batch, AddOn, Booking (incl. travelers, contact fields), AuditLog
     services/bookingService.js  guardrails -> atomic slot reservation -> Razorpay order -> payment verification
+    services/emailService.js    optional booking-receipt email (deterministic facts, LLM-written note)
     utils/guardrails.js        fitness / add-on-cap / budget checks + audit logging
     utils/crypto.js            constant-time Razorpay signature comparison
     controllers, routes        human-facing REST API
@@ -34,7 +36,7 @@ Backend/
   Ai/                          AI concierge layer — reuses core services, does not duplicate them
     services/llmService.js      thin client for the LLM (Groq cloud, gpt-oss-20b), timeout/abort handled
     services/extractionService.js    message -> structured signals (difficulty, budget, fitness, travelers, intent)
-    services/retrievalService.js     signals -> matching treks, or the closest sales-pivot alternative
+    services/retrievalService.js     signals -> matching treks (up to 4), or the closest sales-pivot alternative
     services/recommendationService.js  per-trek sales pitch, add-on upsell, and trek-info Q&A
     services/conciergeService.js     orchestrates the above; the *only* place chat and booking meet
   mcp-server/index.js         MCP server — exposes the catalog/concierge/reserve/audit tools over stdio
@@ -137,7 +139,9 @@ npm test
 cd Backend
 npm install
 cp .env.example .env   # fill in MONGO_URI, RAZORPAY_KEY_ID/SECRET (test mode), GROQ_API_KEY
-npm run seed            # seeds 10 treks, batches, add-ons, and a 1-slot-left race-condition fixture
+                         # GMAIL_USER/GMAIL_APP_PASSWORD are optional — enables an AI-personalized
+                         # booking receipt email; booking works fine without them
+npm run seed            # seeds 25 treks, batches, add-ons, and a 1-slot-left race-condition fixture
 npm run dev              # http://localhost:5000
 npm test                 # optional: run the automated suite against an isolated test DB
 
@@ -158,7 +162,7 @@ Split hosting: **Vercel for the frontend, Render for the backend.** Vercel's ser
    - Start command: `npm start`
    - Environment variables: `MONGO_URI`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `GROQ_API_KEY`, `NODE_ENV=production`. Render sets `PORT` itself.
    - Once deployed, note the URL (e.g. `https://altitude-api.onrender.com`).
-3. **Frontend on Vercel**: new project → connect the repo, root directory `Frontend/`. Vercel auto-detects the Vite build; `vercel.json` already includes the SPA rewrite so client-side routes like `/trek/:id` and `/agent-demo` work on direct navigation/refresh.
+3. **Frontend on Vercel**: new project → connect the repo, root directory `Frontend/`. Vercel auto-detects the Vite build; `vercel.json` already includes the SPA rewrite so client-side routes like `/trek/:id` and `/demo` work on direct navigation/refresh.
    - Environment variables: `VITE_RAZORPAY_KEY_ID` (same test key as the backend), `VITE_API_BASE_URL` = the Render URL from step 2.
 4. **Seed the deployed database** once: either run `npm run seed` locally against the same `MONGO_URI`, or temporarily add a one-off Render shell command.
 5. **Heads up for judges**: Render's free tier spins a service down after ~15 minutes idle; the first request after that takes 30-60s to wake up. If a judge's first click seems to hang, that's why — not a bug.
@@ -168,11 +172,11 @@ Split hosting: **Vercel for the frontend, Render for the backend.** Vercel's ser
 1. **Human path**: Home → pick a trek → select a batch/add-ons/traveler count → "Book Now" → Razorpay test card (`4111 1111 1111 1111`, any future expiry/CVV) → confirmed booking → "My Bookings".
 2. **Agent path, same UI**: on a trek page, click **"Book with Concierge"** (or chat with Altia — try "a trek under 15000 for 3 people", then "book this") — the checkout modal shows a *"Booking via AI Concierge (source: agent)"* badge and pre-filled contact details, and the resulting booking flows through `/chat/book` with its own guardrail trace.
 3. **Admin Audit** (`/admin`): shows both `Human (Web)` and `API Agent` entries, revenue/rejection analytics with a chart, and a per-check pass/fail trace for every decision — including the AI's own reasoning steps, not just payment events.
-4. **Live Agent Demo** (`/agent-demo`, in the nav): pick a demo (REST AI buyer happy path, a deliberate guardrail rejection, or the independent MCP buyer) and hit "Run demo" — it runs the actual script from `Backend/scripts/` on the server and streams the real output live in the browser. No terminal needed; this is what makes the CLI-only agent demos visible on the live link.
-4. **Autonomous AI buyer (REST)**: `npm run ai-buyer`, then `npm run ai-buyer:fail` for a clean guardrail rejection.
-5. **Autonomous AI buyer (MCP — a genuinely separate agent)**: `npm run mcp-buyer` — watch it discover, converse, and reserve entirely over the MCP protocol with zero access to this codebase, then honestly fail to fake a payment.
-6. **Race safety**: fire two concurrent `POST /bookings/create` requests at `batch_trk_001_race` (seeded with exactly 1 slot left) — exactly one succeeds.
-7. **Prove it**: `npm test` — 23 tests, green.
+4. **Watch an AI Buy** (`/demo`, in the nav): pick a demo (REST AI buyer happy path, a deliberate guardrail rejection, or the independent MCP buyer) and hit "Run demo" — it runs the actual script from `Backend/scripts/` on the server and streams the real output live in the browser, with a step tracker parsed straight from that output. No terminal needed; this is what makes the CLI-only agent demos visible on the live link.
+5. **Autonomous AI buyer (REST)**: `npm run ai-buyer`, then `npm run ai-buyer:fail` for a clean guardrail rejection.
+6. **Autonomous AI buyer (MCP — a genuinely separate agent)**: `npm run mcp-buyer` — watch it discover, converse, and reserve entirely over the MCP protocol with zero access to this codebase, then honestly fail to fake a payment.
+7. **Race safety**: fire two concurrent `POST /bookings/create` requests at `batch_trk_001_race` (seeded with exactly 1 slot left) — exactly one succeeds.
+8. **Prove it**: `npm test` — 23 tests, green.
 
 ## Guardrails reference
 

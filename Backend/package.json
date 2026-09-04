@@ -24,6 +24,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
     "mongoose": "^9.9.3",
+    "nodemailer": "^10.0.0",
     "razorpay": "^2.9.8",
     "uuid": "^14.0.2",
     "zod": "^4.5.4"
