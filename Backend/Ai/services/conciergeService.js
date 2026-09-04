@@ -70,8 +70,10 @@ class ConciergeService {
     try {
       // 1. Extraction (+ reliable regex extraction for email/phone — an LLM
       // is more likely to mistranscribe a structured token like an email
-      // than a regex is to miss one)
-      const extractionResult = await extractionService.extractSignals(message);
+      // than a regex is to miss one). The extraction prompt only ever sees
+      // this one message, so a bare "why?" has nothing to refer to unless we
+      // tell it a trek is already on screen.
+      const extractionResult = await extractionService.extractSignals(message, { hasActiveTrek: !!context.lastTrekId });
       const contactFromText = extractContactFromText(message);
       const incomingSignals = { ...extractionResult.signals, ...contactFromText };
       const signals = mergeSignals(context.priorSignals, incomingSignals);
@@ -118,7 +120,18 @@ class ConciergeService {
       // itinerary?", "how hard is it?") — answer it directly instead of
       // re-running the whole search pipeline, which would just repeat the
       // same card and pitch and read as broken rather than conversational.
-      if (extractionResult.confidence === 'high' && extractionResult.signals.isInfoRequest && context.lastTrekId && !hasNewFiltersThisTurn) {
+      //
+      // Second clause is a deliberate safety net, not a duplicate check: the
+      // extractor only sees this one message with no conversation history,
+      // so short elliptical follow-ups ("why this?", "really?") can fail to
+      // set isInfoRequest even with the hasActiveTrek hint. Any turn that (a)
+      // has a trek already in context, (b) didn't introduce a new search
+      // filter, and (c) isn't a booking intent has nothing else useful to do
+      // with stale signals but silently repeat the last recommendation — so
+      // treat it as an info request by default rather than looping.
+      const looksLikeInfoRequest = extractionResult.confidence === 'high' && extractionResult.signals.isInfoRequest;
+      const fallsThroughToStaleSearch = context.lastTrekId && !hasNewFiltersThisTurn && !extractionResult.signals.isBookingIntent;
+      if (looksLikeInfoRequest || fallsThroughToStaleSearch) {
         return this._answerTrekInfo(context.lastTrekId, message, signals, correlationId);
       }
 

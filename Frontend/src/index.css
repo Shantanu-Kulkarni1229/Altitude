@@ -1,9 +1,121 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* Expedition Logbook design system — see PRODUCT.md / .impeccable/surfaces/app.md */
+
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-sans: "Barlow", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  /* canvas — the dark expedition-cover ground */
+  --color-canvas-950: #131613;
+  --color-canvas-900: #1a1e1a;
+  --color-canvas-850: #202520;
+  --color-canvas-800: #262b25;
+  --color-canvas-700: #363c34;
+  --color-canvas-600: #4a5147;
+  --color-canvas-500: #636b5c;
+  --color-canvas-400: #8a9182;
+  --color-canvas-300: #b3b8ac;
+
+  /* paper — the light field-page ground (cool, not cream) */
+  --color-paper-50: #f2f4ee;
+  --color-paper-100: #e8ebe2;
+  --color-paper-200: #d9ddd0;
+  --color-paper-300: #c1c7b6;
+
+  /* ink — text on paper */
+  --color-ink-900: #1b1f19;
+  --color-ink-800: #262b23;
+  --color-ink-700: #3a4136;
+  --color-ink-600: #525a4b;
+  --color-ink-500: #6b7365;
+  --color-ink-400: #8f9784;
+
+  /* flare — the one saturated accent (primary action) */
+  --color-flare-700: #b8431b;
+  --color-flare-600: #d94f1e;
+  --color-flare-500: #f0631f;
+  --color-flare-400: #f68a4f;
+  --color-flare-100: #fde3d2;
+  --color-flare-50: #fef3ec;
+
+  /* pine — guardrail pass / confirmed / human channel */
+  --color-pine-700: #1f4d34;
+  --color-pine-600: #2b6b47;
+  --color-pine-500: #3a8a5c;
+  --color-pine-100: #dcece1;
+  --color-pine-50: #eef6f1;
+
+  /* rust — guardrail block / rejected / danger */
+  --color-rust-700: #7a2a1f;
+  --color-rust-600: #9c3626;
+  --color-rust-500: #b8452f;
+  --color-rust-100: #f5ddd5;
+  --color-rust-50: #faece7;
+
+  /* brass — instrument gauges, pending states */
+  --color-brass-600: #9c7a2e;
+  --color-brass-500: #c99a3d;
+  --color-brass-400: #dbb459;
+  --color-brass-100: #f3e6c4;
+
+  /* seal — AI/agent stamp ink (used sparingly, on the seal mark only) */
+  --color-seal-700: #1f2a44;
+  --color-seal-600: #2c3c5e;
+  --color-seal-100: #dde3ee;
 }
 
 html {
   font-feature-settings: "cv11", "ss01";
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background-color: var(--color-flare-500);
+  color: var(--color-paper-50);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-canvas-600);
+  border-radius: 999px;
+  border: 3px solid var(--color-canvas-950);
+}
+.scroll-on-paper::-webkit-scrollbar-thumb {
+  background-color: var(--color-paper-300);
+  border-color: var(--color-paper-50);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-canvas-600) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-flare-500);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Route line — the hand-plotted spine used as a structural device, not decoration */
+@keyframes draw-route {
+  from { stroke-dashoffset: var(--route-length, 1000); }
+  to { stroke-dashoffset: 0; }
+}
+.route-line path {
+  stroke-dasharray: var(--route-length, 1000);
+  animation: draw-route 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

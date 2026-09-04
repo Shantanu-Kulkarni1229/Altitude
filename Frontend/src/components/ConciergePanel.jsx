@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Sparkles, ShieldCheck, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import TrekCard from './TrekCard';
@@ -153,124 +154,141 @@ export default function ConciergePanel({ isOpen, setIsOpen }) {
   }, [isOpen]);
 
   return (
-    <>
-      {/* Mobile overlay */}
+    <AnimatePresence>
       {isOpen && (
-        <div
-          className="fixed inset-0 bg-stone-950/50 backdrop-blur-[2px] z-40 sm:hidden transition-opacity"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
+        <>
+          {/* Mobile overlay */}
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-canvas-950/60 backdrop-blur-[2px] z-40 sm:hidden"
+            onClick={() => setIsOpen(false)}
+          />
 
-      <div className={`fixed inset-y-0 right-0 w-[92%] max-w-[420px] bg-white shadow-2xl shadow-stone-950/10 border-l border-stone-200/80 z-50 flex flex-col transform transition-transform duration-300 ease-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="px-5 py-4 border-b border-stone-100 flex justify-between items-center bg-white">
-          <div className="flex items-center gap-3">
-            <div className="relative w-10 h-10 rounded-full bg-stone-900 text-white flex items-center justify-center overflow-hidden p-1.5 shrink-0">
-              <img src={chatLogo} alt="Altia" className="w-full h-full object-contain" />
-              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-stone-900 leading-tight">Altia</h3>
-              <p className="text-xs text-emerald-600 font-medium">Trek expert · Online now</p>
-            </div>
-          </div>
-          <button onClick={() => setIsOpen(false)} className="text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full p-1.5 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4 bg-gradient-to-b from-stone-50 to-white">
-          {messages.map(msg => (
-            <div key={msg.id} className={`flex flex-col ${msg.type === 'user' ? 'items-end' : 'items-start'}`}>
-              <div className={`max-w-[88%] rounded-2xl px-4 py-2.5 ${
-                msg.type === 'user'
-                  ? 'bg-stone-900 text-white rounded-tr-md'
-                  : 'bg-white border border-stone-200 text-stone-800 rounded-tl-md shadow-sm shadow-stone-900/[0.03]'
-              }`}>
-                <p className="text-[14.5px] leading-relaxed whitespace-pre-line">{msg.text}</p>
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', stiffness: 340, damping: 34 }}
+            className="fixed inset-y-0 right-0 w-[92%] max-w-[420px] bg-paper-50 shadow-2xl shadow-canvas-950/20 border-l border-paper-300 z-50 flex flex-col"
+          >
+            <div className="px-5 py-4 border-b border-paper-200 flex justify-between items-center bg-canvas-950">
+              <div className="flex items-center gap-3">
+                <div className="relative w-10 h-10 rounded-full bg-canvas-800 text-white flex items-center justify-center overflow-hidden p-1.5 shrink-0">
+                  <img src={chatLogo} alt="Altia" className="w-full h-full object-contain" />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-pine-500 border-2 border-canvas-950" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-paper-50 leading-tight font-display">Altia</h3>
+                  <p className="text-xs text-pine-400 font-medium font-mono">Trek expert · online now</p>
+                </div>
               </div>
+              <button onClick={() => setIsOpen(false)} className="text-canvas-400 hover:text-paper-100 hover:bg-canvas-800 rounded-full p-1.5 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-              {msg.trekRecommendation && (
-                <div className="mt-2.5 w-[92%] ml-1">
-                  <TrekCard trek={msg.trekRecommendation} compact={true} />
-                </div>
-              )}
-
-              {msg.isAlternative && (
-                <div className="mt-2 ml-1 flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 w-fit px-2 py-0.5 rounded-full">
-                  Closest match — not an exact hit on your original ask
-                </div>
-              )}
-
-              {msg.guardrail && !msg.isFallback && (
-                <div className="mt-2 ml-1 flex items-start gap-1.5 text-xs text-emerald-700 font-medium max-w-[92%]">
-                  <Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  <span>Why this one: {msg.guardrail}</span>
-                </div>
-              )}
-
-              {msg.suggestedAddOn && (
-                <div className="mt-2 ml-1 max-w-[92%] flex items-start gap-1.5 text-xs text-blue-700 font-medium">
-                  <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  <span>
-                    Suggested add-on: <strong>{msg.suggestedAddOn.addonName}</strong> — {msg.suggestedAddOn.reason} (stays within the add-on spending cap for this trek)
-                  </span>
-                </div>
-              )}
-
-              {msg.campaignNudge && (
-                <button
-                  onClick={() => {
-                    setIsOpen(false);
-                    navigate(`/trek/${msg.campaignNudge.trekId}?checkout=true&via=agent&corr=${sessionCorrelationId.current}`);
-                  }}
-                  className="mt-2 ml-1 flex items-center gap-1.5 text-xs font-semibold text-white bg-stone-900 hover:bg-stone-800 px-3 py-1.5 rounded-lg transition-colors"
+            <div className="flex-1 overflow-y-auto scroll-on-paper px-4 py-5 space-y-4 bg-paper-100">
+              {messages.map(msg => (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                  className={`flex flex-col ${msg.type === 'user' ? 'items-end' : 'items-start'}`}
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Resume booking
-                </button>
-              )}
+                  <div className={`max-w-[88%] rounded-xl px-4 py-2.5 ${
+                    msg.type === 'user'
+                      ? 'bg-flare-500 text-white rounded-tr-md'
+                      : 'bg-paper-50 border border-paper-300 text-ink-800 rounded-tl-md shadow-sm shadow-canvas-950/[0.03]'
+                  }`}>
+                    <p className="text-[14.5px] leading-relaxed whitespace-pre-line">{msg.text}</p>
+                  </div>
 
-              {msg.isFallback && msg.id !== 1 && (
-                <div className="mt-2 ml-1 flex items-center gap-1.5 text-xs text-amber-600 font-medium">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  Fallback Mode Active
-                </div>
-              )}
-            </div>
-          ))}
-          {loading && (
-            <div className="flex flex-col items-start">
-              <div className="bg-white border border-stone-200 text-stone-800 rounded-2xl rounded-tl-md shadow-sm px-4 py-3 flex gap-1">
-                <span className="w-1.5 h-1.5 bg-stone-300 rounded-full animate-bounce"></span>
-                <span className="w-1.5 h-1.5 bg-stone-300 rounded-full animate-bounce delay-100"></span>
-                <span className="w-1.5 h-1.5 bg-stone-300 rounded-full animate-bounce delay-200"></span>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+                  {msg.trekRecommendation && (
+                    <div className="mt-2.5 w-[92%] ml-1">
+                      <TrekCard trek={msg.trekRecommendation} compact={true} />
+                    </div>
+                  )}
 
-        <div className="p-4 bg-white border-t border-stone-100">
-          <form onSubmit={handleSend} className="relative">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Altia about a trek..."
-              disabled={loading}
-              className="w-full bg-stone-100 border-none rounded-full pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all placeholder:text-stone-400 disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || loading}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 text-white bg-stone-900 disabled:bg-stone-300 hover:bg-stone-800 rounded-full transition-colors"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
-        </div>
-      </div>
-    </>
+                  {msg.isAlternative && (
+                    <div className="mt-2 ml-1 flex items-center gap-1.5 text-[11px] font-semibold text-brass-600 bg-brass-100 border border-brass-400/40 w-fit px-2 py-0.5 rounded-full">
+                      Closest match — not an exact hit on your original ask
+                    </div>
+                  )}
+
+                  {msg.guardrail && !msg.isFallback && (
+                    <div className="mt-2 ml-1 flex items-start gap-1.5 text-xs text-pine-700 font-medium max-w-[92%]">
+                      <Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>Why this one: {msg.guardrail}</span>
+                    </div>
+                  )}
+
+                  {msg.suggestedAddOn && (
+                    <div className="mt-2 ml-1 max-w-[92%] flex items-start gap-1.5 text-xs text-seal-600 font-medium">
+                      <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Suggested add-on: <strong>{msg.suggestedAddOn.addonName}</strong> — {msg.suggestedAddOn.reason} (stays within the add-on spending cap for this trek)
+                      </span>
+                    </div>
+                  )}
+
+                  {msg.campaignNudge && (
+                    <motion.button
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => {
+                        setIsOpen(false);
+                        navigate(`/trek/${msg.campaignNudge.trekId}?checkout=true&via=agent&corr=${sessionCorrelationId.current}`);
+                      }}
+                      className="mt-2 ml-1 flex items-center gap-1.5 text-xs font-semibold text-white bg-flare-500 hover:bg-flare-600 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      Resume booking
+                    </motion.button>
+                  )}
+
+                  {msg.isFallback && msg.id !== 1 && (
+                    <div className="mt-2 ml-1 flex items-center gap-1.5 text-xs text-brass-600 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      Fallback mode active
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+              {loading && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-start">
+                  <div className="bg-paper-50 border border-paper-300 text-ink-800 rounded-xl rounded-tl-md shadow-sm px-4 py-3 flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-ink-300 rounded-full animate-bounce"></span>
+                    <span className="w-1.5 h-1.5 bg-ink-300 rounded-full animate-bounce delay-100"></span>
+                    <span className="w-1.5 h-1.5 bg-ink-300 rounded-full animate-bounce delay-200"></span>
+                  </div>
+                </motion.div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <div className="p-4 bg-paper-50 border-t border-paper-200">
+              <form onSubmit={handleSend} className="relative">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask Altia about a trek..."
+                  disabled={loading}
+                  className="w-full bg-paper-100 border border-paper-300 rounded-full pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-flare-500/40 transition-all placeholder:text-ink-400 disabled:opacity-50"
+                />
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  type="submit"
+                  disabled={!input.trim() || loading}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 text-white bg-flare-500 disabled:bg-paper-300 hover:bg-flare-600 rounded-full transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                </motion.button>
+              </form>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

@@ -2,11 +2,13 @@ const { LLMService } = require('./llmService');
 const extractionPrompt = require('../prompts/extractionPrompt');
 
 class ExtractionService {
-  async extractSignals(customerMessage) {
-    const prompt = extractionPrompt(customerMessage);
+  async extractSignals(customerMessage, options = {}) {
+    const prompt = extractionPrompt(customerMessage, options);
 
-    // We let LLMUnavailableError bubble up
-    const rawResponse = await LLMService.generateResponse(prompt);
+    // We let LLMUnavailableError bubble up. Strict JSON mode removes the
+    // whole class of failures where the model wraps its answer in prose or
+    // markdown despite being told not to.
+    const rawResponse = await LLMService.generateResponse(prompt, 15000, { jsonMode: true });
     
     try {
       // Attempt to parse JSON

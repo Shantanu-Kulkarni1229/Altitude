@@ -14,7 +14,7 @@ class LLMService {
     this.lastCallOk = null; // null = never called yet, true/false = last result
   }
 
-  async generateResponse(prompt, timeoutMs = 15000) {
+  async generateResponse(prompt, timeoutMs = 15000, { jsonMode = false } = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -29,7 +29,8 @@ class LLMService {
           model: 'openai/gpt-oss-20b',
           messages: [{ role: 'user', content: prompt }],
           stream: false,
-          temperature: 0.2
+          temperature: 0.2,
+          ...(jsonMode ? { response_format: { type: 'json_object' } } : {})
         }),
         signal: controller.signal
       });
